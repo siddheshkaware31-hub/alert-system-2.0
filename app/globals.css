@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+:root {
+  --background: #070b14;
+  --panel: #0d1422;
+  --panel-2: #111c2d;
+  --border: #1e2a3a;
+  --muted: #8290a5;
+  --text: #f4f7fb;
+  --blue: #4f8cff;
+}
+
+* { box-sizing: border-box; }
+
+html { background: var(--background); }
+
+body {
+  margin: 0;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background: #070b14;
+  color: #f4f7fb;
+}
+
+::selection { background: rgba(79, 140, 255, 0.25); }
+
+button, a, input { font: inherit; }
+
+.font-mono {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+.dashboard-shell {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 72% 0%, rgba(43, 93, 180, 0.12), transparent 30%),
+    radial-gradient(circle at 100% 70%, rgba(79, 140, 255, 0.06), transparent 28%),
+    #070b14;
+}
+
+.glow-line {
+  box-shadow: 0 0 0 1px rgba(79, 140, 255, 0.08), 0 12px 40px rgba(0, 0, 0, 0.18);
+}
