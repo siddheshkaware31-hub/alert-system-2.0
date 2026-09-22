@@ -1,0 +1,4 @@
+hotel_name,hotel_email,hotel_phone,booking_ref,check_in_date,check_out_date,room_type,num_rooms,traveler_name,traveler_email,traveler_phone
+Taj Mahal Palace Mumbai,siddheshvelocity31@gmail.com,+919876543210,HTL-2026-001,2026-09-28,2026-10-01,Luxury Sea View Suite,1,Siddhesh Sharma,siddheshvelocity31@gmail.com,+919876543210
+The Oberoi New Delhi,siddheshvelocity31@gmail.com,+919876543211,HTL-2026-002,2026-10-02,2026-10-05,Premier Club Room,1,Priya Mehta,siddheshvelocity31@gmail.com,+919876543211
+ITC Grand Chola Chennai,siddheshvelocity31@gmail.com,+919876543212,HTL-2026-003,2026-10-08,2026-10-10,Executive Suite,2,Rahul Verma,siddheshvelocity31@gmail.com,+919876543212
