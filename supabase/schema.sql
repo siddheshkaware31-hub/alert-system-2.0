@@ -112,8 +112,8 @@ CREATE TABLE IF NOT EXISTS public.hotel_bookings (
   num_rooms             INT DEFAULT 1,
   traveler_name         TEXT NOT NULL,
   traveler_email        TEXT,
-  traveler_phone        TEXT,
-  corporate_name        TEXT,
+  hcn                   TEXT,
+  notes                 TEXT,
   confirmation_status   TEXT DEFAULT 'pending' CHECK (confirmation_status IN ('pending','awaiting_reply','confirmed','failed','cancelled')),
   confirmation_token    UUID DEFAULT uuid_generate_v4(),
   confirmed_via         TEXT CHECK (confirmed_via IN ('link','whatsapp','email','manual')),
@@ -259,3 +259,19 @@ INSERT INTO public.app_config (key, value) VALUES
   ('app_url',     'http://localhost:3000'),
   ('cron_secret', 'prototype-cron-secret')
 ON CONFLICT (key) DO NOTHING;
+
+-- ─── FEEDBACK / RATINGS ─────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS public.feedback (
+  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  entity_type     TEXT NOT NULL CHECK (entity_type IN ('flight','hotel')),
+  entity_id       UUID NOT NULL,
+  feedback_token  UUID DEFAULT uuid_generate_v4(),
+  rating          INT CHECK (rating >= 1 AND rating <= 5),
+  comment         TEXT,
+  submitted_at    TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_feedback_token  ON public.feedback(feedback_token);
+CREATE INDEX IF NOT EXISTS idx_feedback_entity ON public.feedback(entity_type, entity_id);

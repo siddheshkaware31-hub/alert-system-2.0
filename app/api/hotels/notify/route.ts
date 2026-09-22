@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { getSession } from '@/lib/auth/session'
 import { sendEmail } from '@/lib/email/mailer'
-import { sendWhatsAppTemplate } from '@/lib/whatsapp/doubletick'
+import { sendWhatsAppTemplate, sendWhatsAppText } from '@/lib/whatsapp/doubletick'
 import { hotelConfirmationRequestEmail } from '@/lib/email/templates/hotelTemplates'
 import { HotelBooking } from '@/types'
 
@@ -67,18 +67,26 @@ export async function POST(request: NextRequest) {
     // WhatsApp to hotel
     if (booking.hotel_phone) {
       try {
-        const wa = await sendWhatsAppTemplate({
-          to: booking.hotel_phone,
-          templateName: process.env.DOUBLETICK_TEMPLATE_HOTEL_REQUEST!,
-          variables: [
-            booking.hotel_name,
-            booking.booking_ref,
-            booking.traveler_name,
-            booking.check_in_date,
-            booking.check_out_date,
-            confirmUrl,
-          ],
-        })
+        const templateName = process.env.DOUBLETICK_TEMPLATE_HOTEL_REQUEST
+        let wa: { messageId?: string; error?: string } = {}
+        if (templateName) {
+          wa = await sendWhatsAppTemplate({
+            to: booking.hotel_phone,
+            templateName,
+            variables: [
+              booking.hotel_name,
+              booking.booking_ref,
+              booking.traveler_name,
+              booking.check_in_date,
+              booking.check_out_date,
+              confirmUrl,
+            ],
+          })
+        }
+        if (!templateName || wa.error) {
+          const textMsg = `🏨 *VeloTrav Hotel Reconfirmation Request*\n\nDear ${booking.hotel_name},\nPlease reconfirm booking ref *${booking.booking_ref}* for guest *${booking.traveler_name}* (${booking.check_in_date} to ${booking.check_out_date}).\n\n1-Click Confirmation Link:\n${confirmUrl}`
+          wa = await sendWhatsAppText(booking.hotel_phone, textMsg)
+        }
         await db.from('notification_logs').insert({
           entity_type: 'hotel',
           entity_id: booking.id,

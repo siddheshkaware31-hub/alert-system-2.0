@@ -37,6 +37,11 @@ async function post(path: string, body: unknown): Promise<{ messageId?: string; 
 
 export async function sendWhatsAppTemplate(opts: SendTemplateOptions) {
   assertNotLiveContact(opts.to, 'whatsapp')
+  if (!API_KEY) {
+    console.log(`[DoubleTick Mock] Template '${opts.templateName}' to ${opts.to}`)
+    return { messageId: `mock-wa-${Date.now()}` }
+  }
+
   const components: TemplateComponent[] = [
     {
       type: 'body',
@@ -56,6 +61,10 @@ export async function sendWhatsAppTemplate(opts: SendTemplateOptions) {
 
 export async function sendWhatsAppText(to: string, text: string) {
   assertNotLiveContact(to, 'whatsapp')
+  if (!API_KEY) {
+    console.log(`[DoubleTick Mock] Text to ${to}: ${text}`)
+    return { messageId: `mock-wa-${Date.now()}` }
+  }
   return post('/whatsapp/message/text', {
     to,
     content: { text },

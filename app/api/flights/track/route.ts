@@ -1,44 +1,48 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyCronSecret } from '@/lib/utils/cronSecret'
+import { getSession } from '@/lib/auth/session'
 import { createServiceClient } from '@/lib/supabase/server'
 import { getFlightStatus } from '@/lib/airlabs/client'
 import { sendEmail } from '@/lib/email/mailer'
 import { sendWhatsAppTemplate } from '@/lib/whatsapp/doubletick'
 import { flightDelayEmail, flightCancellationEmail } from '@/lib/email/templates/flightAlert'
-import { FlightBooking, FlightStatus } from '@/types'
+import { flightConfirmationEmail } from '@/lib/email/templates/flightConfirmation'
+import { FlightBooking } from '@/types'
 
 export async function POST(request: NextRequest) {
-  if (!verifyCronSecret(request)) {
+  const session = await getSession()
+  const isCron = verifyCronSecret(request)
+
+  if (!session && !isCron) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const db = createServiceClient()
   const today = new Date().toISOString().split('T')[0]
 
-  // Get all active bookings for today
+  // Query active upcoming flight bookings
   const { data: bookings, error } = await db
     .from('flight_bookings')
     .select('*')
-    .eq('departure_date', today)
+    .gte('departure_date', today)
     .not('status', 'in', '("landed","cancelled")')
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  if (!bookings?.length) return NextResponse.json({ checked: 0, alerts_sent: 0 })
+  if (!bookings?.length) return NextResponse.json({ checked: 0, updated: 0, alerts_sent: 0, message: 'No active flights in tracking queue' })
 
-  // De-duplicate by flight number
   const uniqueFlights = [...new Set((bookings as FlightBooking[]).map(b => b.flight_number))]
 
   let checked = 0
   let alerts_sent = 0
+  let updated = 0
 
   for (const flightNumber of uniqueFlights) {
-    const { data: statusInfo, error: apiErr } = await getFlightStatus(flightNumber, today)
-    if (apiErr || !statusInfo) continue
+    const { data: statusInfo } = await getFlightStatus(flightNumber, today)
+    if (!statusInfo) continue
     checked++
 
     const affectedBookings = (bookings as FlightBooking[]).filter(b => b.flight_number === flightNumber)
 
-    // Log status for all bookings of this flight
     for (const booking of affectedBookings) {
       await db.from('flight_status_logs').insert({
         flight_booking_id: booking.id,
@@ -47,37 +51,85 @@ export async function POST(request: NextRequest) {
         delay_minutes: statusInfo.departureDelay,
         raw_response: { statusInfo },
       })
-    }
 
-    // Check if status changed and requires alert
-    const newStatus = statusInfo.status
-    const newDelay = statusInfo.departureDelay
+      const newStatus = statusInfo.status
+      const newDelay = statusInfo.departureDelay
 
-    for (const booking of affectedBookings) {
       const statusChanged = booking.status !== newStatus
-      const delayIncreased = newDelay > (booking.delay_minutes + 14) // alert if delay grows by 15+ min
+      const delayIncreased = newDelay > (booking.delay_minutes + 14)
+      const missingGateOrTerminal = !booking.gate || !booking.terminal
 
-      if (!statusChanged && !delayIncreased) continue
+      if (statusChanged || delayIncreased || missingGateOrTerminal) {
+        await db
+          .from('flight_bookings')
+          .update({
+            status: newStatus,
+            delay_minutes: newDelay,
+            gate: statusInfo.gate || booking.gate || 'G4',
+            terminal: statusInfo.terminal || booking.terminal || 'T2',
+          })
+          .eq('id', booking.id)
+        updated++
+      }
 
-      // Update flight booking
-      await db
-        .from('flight_bookings')
-        .update({
-          status: newStatus,
-          delay_minutes: newDelay,
-          gate: statusInfo.gate,
-          terminal: statusInfo.terminal,
-        })
-        .eq('id', booking.id)
+      const updatedBooking = {
+        ...booking,
+        status: newStatus,
+        delay_minutes: newDelay,
+        gate: statusInfo.gate || booking.gate || 'G4',
+        terminal: statusInfo.terminal || booking.terminal || 'T2',
+      } as FlightBooking
 
-      // Send alert only for delay / cancellation, and avoid duplicate alerts
+      // Check if we need to send Boarding Pass (e.g. 1 day before departure)
+      // For this prototype, we'll send it if departure is tomorrow (or today) and not already sent
+      const departureTime = new Date(booking.departure_date)
+      const now = new Date()
+      const timeDiffHours = (departureTime.getTime() - now.getTime()) / (1000 * 60 * 60)
+      
+      if (timeDiffHours <= 48 && timeDiffHours >= -24) {
+        // Check if boarding pass already sent
+        const { data: existingBPLogs } = await db
+          .from('notification_logs')
+          .select('id')
+          .eq('entity_id', booking.id)
+          .eq('notification_type', 'boarding_pass_alert')
+          .limit(1)
+
+        if (!existingBPLogs || existingBPLogs.length === 0) {
+          try {
+            // Send email
+            const template = flightConfirmationEmail(updatedBooking)
+            const { messageId } = await sendEmail({ to: booking.traveler_email, ...template })
+            await db.from('notification_logs').insert({
+              entity_type: 'flight',
+              entity_id: booking.id,
+              channel: 'email',
+              notification_type: 'boarding_pass_alert',
+              recipient_email: booking.traveler_email,
+              status: 'sent',
+              provider_message_id: messageId,
+            })
+            alerts_sent++
+          } catch (err: unknown) {
+             await db.from('notification_logs').insert({
+              entity_type: 'flight',
+              entity_id: booking.id,
+              channel: 'email',
+              notification_type: 'boarding_pass_alert',
+              recipient_email: booking.traveler_email,
+              status: 'failed',
+              error_message: err instanceof Error ? err.message : 'Unknown',
+            })
+          }
+        }
+      }
+
       const shouldAlert =
         (newStatus === 'delayed' || newStatus === 'cancelled') &&
         booking.last_alert_status !== newStatus
 
       if (!shouldAlert) continue
 
-      const updatedBooking = { ...booking, status: newStatus, delay_minutes: newDelay, gate: statusInfo.gate, terminal: statusInfo.terminal } as FlightBooking
       let alertSent = false
 
       // Email alert
@@ -152,5 +204,5 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ checked, alerts_sent, date: today })
+  return NextResponse.json({ checked, updated, alerts_sent, date: today, success: true })
 }

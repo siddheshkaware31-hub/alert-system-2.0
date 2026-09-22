@@ -32,21 +32,66 @@ export async function POST(request: NextRequest) {
   if (batchErr) return NextResponse.json({ error: batchErr.message }, { status: 500 })
 
   let successRows = 0
+  const insertErrors: Array<{ row: number; error: string }> = [...errors]
+
   if (rows.length > 0) {
-    const inserts = rows.map(r => ({ ...r, import_batch_id: batch.id, created_by: session.userId }))
-    const { error: insertErr } = await db.from('hotel_bookings').insert(inserts)
-    if (!insertErr) successRows = rows.length
+    // Deduplicate against database by booking_ref / Employee record
+    const refs = rows.map(r => r.booking_ref)
+    const { data: existingBookings } = await db
+      .from('hotel_bookings')
+      .select('id, booking_ref')
+      .in('booking_ref', refs)
+
+    const existingRefMap = new Map((existingBookings || []).map((b: { id: string; booking_ref: string }) => [b.booking_ref.toUpperCase(), b.id]))
+
+    for (let idx = 0; idx < rows.length; idx++) {
+      const r = rows[idx]
+      const existingId = existingRefMap.get(r.booking_ref.toUpperCase())
+
+      if (existingId) {
+        // Update existing record (prevent duplicate rows for same booking_ref)
+        const { error: updateErr } = await db
+          .from('hotel_bookings')
+          .update({
+            ...r,
+            import_batch_id: batch.id,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existingId)
+
+        if (updateErr) {
+          insertErrors.push({ row: idx + 2, error: updateErr.message })
+        } else {
+          successRows++
+        }
+      } else {
+        // Insert new booking record
+        const { error: insertErr } = await db
+          .from('hotel_bookings')
+          .insert({
+            ...r,
+            import_batch_id: batch.id,
+            created_by: session.userId,
+          })
+
+        if (insertErr) {
+          insertErrors.push({ row: idx + 2, error: insertErr.message })
+        } else {
+          successRows++
+        }
+      }
+    }
   }
 
   await db
     .from('hotel_import_batches')
     .update({
       success_rows: successRows,
-      failed_rows: errors.length,
+      failed_rows: insertErrors.length,
       status: 'completed',
-      error_log: errors.length > 0 ? errors : null,
+      error_log: insertErrors.length > 0 ? insertErrors : null,
     })
     .eq('id', batch.id)
 
-  return NextResponse.json({ batchId: batch.id, successRows, failedRows: errors.length, errors })
+  return NextResponse.json({ batchId: batch.id, successRows, failedRows: insertErrors.length, errors: insertErrors })
 }

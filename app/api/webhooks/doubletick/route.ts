@@ -4,8 +4,7 @@ import { verifyWebhookSignature, sendWhatsAppText } from '@/lib/whatsapp/doublet
 import { sendEmail } from '@/lib/email/mailer'
 import { hotelConfirmedTravelerEmail } from '@/lib/email/templates/hotelTemplates'
 import { HotelBooking } from '@/types'
-
-const CONFIRMATION_KEYWORDS = /\b(yes|confirm(?:ed)?|ok|sure|booked?|done|approved?|agree|accept)\b/i
+import { analyzeHotelReply } from '@/lib/ai/parser'
 
 export async function POST(request: NextRequest) {
   const rawBody = await request.text()
@@ -54,7 +53,9 @@ export async function POST(request: NextRequest) {
       raw_payload: payload,
     })
 
-    if (CONFIRMATION_KEYWORDS.test(messageBody)) {
+    const aiAnalysis = await analyzeHotelReply(messageBody)
+
+    if (aiAnalysis === 'confirmed') {
       await db
         .from('hotel_bookings')
         .update({
@@ -85,6 +86,20 @@ export async function POST(request: NextRequest) {
       await db.from('hotel_bookings').update({ traveler_notified: true }).eq('id', hb.id)
 
       return NextResponse.json({ received: true, confirmed: true, booking_ref: hb.booking_ref })
+    } else if (aiAnalysis === 'failed') {
+      await db
+        .from('hotel_bookings')
+        .update({
+          confirmation_status: 'failed',
+          confirmed_at: new Date().toISOString(),
+        })
+        .eq('id', hb.id)
+      
+      try {
+        await sendWhatsAppText(from, `We have marked this booking (${hb.booking_ref}) as FAILED. Our operations team has been alerted and will reach out to resolve this shortly.`)
+      } catch {}
+      
+      return NextResponse.json({ received: true, failed: true, booking_ref: hb.booking_ref })
     }
 
     return NextResponse.json({ received: true })

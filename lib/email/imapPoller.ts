@@ -1,11 +1,13 @@
 import { ImapFlow } from 'imapflow'
 import { createServiceClient } from '@/lib/supabase/server'
+import { analyzeHotelReply } from '@/lib/ai/parser'
 
 export interface PollResult {
   awaitingReply: number   // bookings that had email sent, still waiting
   scanned: number         // emails fetched from IMAP
   matched: number         // emails that contained a booking ref
   confirmed: number       // bookings auto-confirmed from this poll
+  failed: number          // bookings auto-failed from this poll
   errors: string[]
 }
 
@@ -22,19 +24,6 @@ function extractBookingRefs(text: string): string[] {
   return [...new Set(matches.map(r => r.trim().toUpperCase()))]
 }
 
-function isConfirmationReply(text: string): boolean {
-  const lower = text.toLowerCase()
-  return (
-    lower.includes('confirm') ||
-    lower.includes('reconfirm') ||
-    lower.includes('yes') ||
-    lower.includes('noted') ||
-    lower.includes('acknowledged') ||
-    lower.includes('received') ||
-    lower.includes('booked')
-  )
-}
-
 // Format a Date as DD-Mon-YYYY for IMAP SINCE criteria (e.g. "20-Aug-2026")
 function imapDate(d: Date): string {
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -42,7 +31,7 @@ function imapDate(d: Date): string {
 }
 
 export async function pollEmailReplies(): Promise<PollResult> {
-  const result: PollResult = { awaitingReply: 0, scanned: 0, matched: 0, confirmed: 0, errors: [] }
+  const result: PollResult = { awaitingReply: 0, scanned: 0, matched: 0, confirmed: 0, failed: 0, errors: [] }
   const db = createServiceClient()
 
   // Only check bookings where we actually sent an email AND still awaiting reply.
@@ -50,10 +39,9 @@ export async function pollEmailReplies(): Promise<PollResult> {
   // and haven't replied yet — confirmed/cancelled ones are already resolved.
   const { data: pendingBookings } = await db
     .from('hotel_bookings')
-    .select('id, booking_ref, traveler_email, confirmation_status, created_at')
+    .select('id, booking_ref, hotel_email, traveler_email, confirmation_status, created_at')
     .eq('confirmation_status', 'awaiting_reply')
     .eq('request_email_sent', true)
-    .not('traveler_email', 'is', null)
 
   if (!pendingBookings || pendingBookings.length === 0) {
     return result
@@ -63,14 +51,15 @@ export async function pollEmailReplies(): Promise<PollResult> {
   interface PendingBooking {
     id: string
     booking_ref: string
-    traveler_email: string
+    hotel_email: string | null
+    traveler_email: string | null
     confirmation_status: string
     created_at: string
   }
   const bookings = pendingBookings as PendingBooking[]
 
-  // Unique agent emails + earliest send date (SINCE that date in IMAP)
-  const agentEmails = [...new Set(bookings.map(b => b.traveler_email))]
+  // Unique hotel & traveler emails + earliest send date (SINCE that date in IMAP)
+  const agentEmails = [...new Set(bookings.flatMap(b => [b.hotel_email, b.traveler_email]).filter(Boolean))] as string[]
   const earliest = bookings.reduce((min: string, b: PendingBooking) =>
     b.created_at < min ? b.created_at : min, bookings[0].created_at)
 
@@ -110,6 +99,14 @@ export async function pollEmailReplies(): Promise<PollResult> {
       }
     }
 
+    // Also search for delivery failure / bounce emails from Mailer Daemon
+    try {
+      const bounceUids = await client.search({ from: 'mailer-daemon', seen: false }, { uid: true })
+      if (Array.isArray(bounceUids)) {
+        for (const uid of bounceUids) allUids.add(uid)
+      }
+    } catch {}
+
     if (allUids.size === 0) {
       return result
     }
@@ -128,6 +125,31 @@ export async function pollEmailReplies(): Promise<PollResult> {
       const bodyStart = rawSource.indexOf('\r\n\r\n')
       const body = bodyStart >= 0 ? rawSource.slice(bodyStart + 4) : rawSource
       const fullText = `${subject}\n${body}`
+
+      // Check if this is a Mail Delivery Bounce (Address not found / Mailer Daemon)
+      if (from.includes('mailer-daemon') || from.includes('postmaster') || subject.toLowerCase().includes('delivery status notification')) {
+        for (const booking of bookings) {
+          const targetEmail = booking.hotel_email || booking.traveler_email
+          if (targetEmail && fullText.toLowerCase().includes(targetEmail.toLowerCase())) {
+            await db.from('hotel_bookings').update({
+              confirmation_status: 'failed',
+            }).eq('id', booking.id)
+
+            await db.from('notification_logs').insert({
+              entity_type: 'hotel',
+              entity_id: booking.id,
+              channel: 'email',
+              notification_type: 'email_bounced',
+              recipient_email: targetEmail,
+              status: 'failed',
+              error_message: `Email bounced (Address Not Found): ${targetEmail}`,
+            })
+            result.failed++
+          }
+        }
+        await client.messageFlagsAdd({ uid: msg.uid }, ['\\Seen'])
+        continue
+      }
 
       const refs = extractBookingRefs(fullText)
       if (!refs.length) {
@@ -171,19 +193,29 @@ export async function pollEmailReplies(): Promise<PollResult> {
           sent_at: date,
         })
 
-        if (
-          isConfirmationReply(fullText) &&
-          ['pending', 'awaiting_reply'].includes(booking.confirmation_status)
-        ) {
-          await db.from('hotel_bookings').update({
-            confirmation_status: 'confirmed',
-            confirmed_via: 'email',
-            confirmed_at: date,
-          }).eq('id', booking.id)
+        if (['pending', 'awaiting_reply'].includes(booking.confirmation_status)) {
+          const aiAnalysis = await analyzeHotelReply(fullText)
 
-          // Update in-memory so a second ref in the same email doesn't double-confirm
-          booking.confirmation_status = 'confirmed'
-          result.confirmed++
+          if (aiAnalysis === 'confirmed') {
+            await db.from('hotel_bookings').update({
+              confirmation_status: 'confirmed',
+              confirmed_via: 'email',
+              confirmed_at: date,
+            }).eq('id', booking.id)
+
+            // Update in-memory so a second ref in the same email doesn't double-confirm
+            booking.confirmation_status = 'confirmed'
+            result.confirmed++
+          } else if (aiAnalysis === 'failed') {
+            await db.from('hotel_bookings').update({
+              confirmation_status: 'failed',
+              confirmed_via: 'email',
+              confirmed_at: date,
+            }).eq('id', booking.id)
+
+            booking.confirmation_status = 'failed'
+            result.failed++
+          }
         }
       }
 

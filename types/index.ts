@@ -35,6 +35,7 @@ export interface FlightBooking {
   delay_minutes: number
   gate: string | null
   terminal: string | null
+  seat?: string | null
   confirmation_email_sent: boolean
   confirmation_whatsapp_sent: boolean
   last_alert_status: string | null
@@ -69,6 +70,8 @@ export interface HotelBooking {
   traveler_name: string
   traveler_email: string
   traveler_phone: string | null
+  hcn?: string | null
+  notes?: string | null
   confirmation_status: ConfirmationStatus
   confirmation_token: string
   confirmed_via: 'link' | 'whatsapp' | null

@@ -18,6 +18,24 @@ function getTransporter() {
   return transporter
 }
 
+const FAKE_DOMAINS = [
+  'example.com', 'example.org', 'example.net', 
+  'test.com', 'invalid.com', 'domain.com', 
+  'sample.com', 'localhost'
+]
+
+function resolveSafeEmail(email: string): { targetEmail: string; isRedirected: boolean } {
+  const cleanEmail = (email || '').trim().toLowerCase()
+  const domain = cleanEmail.split('@')[1] || ''
+
+  if (FAKE_DOMAINS.includes(domain)) {
+    const safeFallback = process.env.SMTP_FROM_EMAIL || 'siddheshvelocity31@gmail.com'
+    return { targetEmail: safeFallback, isRedirected: true }
+  }
+
+  return { targetEmail: email, isRedirected: false }
+}
+
 export async function sendEmail(options: {
   to: string
   subject: string
@@ -25,12 +43,16 @@ export async function sendEmail(options: {
   text?: string
 }): Promise<{ messageId: string }> {
   assertNotLiveContact(options.to, 'email')
+  
+  const { targetEmail, isRedirected } = resolveSafeEmail(options.to)
+  const finalSubject = isRedirected ? `[Demo Test for ${options.to}] ${options.subject}` : options.subject
+
   const t = getTransporter()
   const info = await t.sendMail({
     from: `"${process.env.SMTP_FROM_NAME}" <${process.env.SMTP_FROM_EMAIL}>`,
-    replyTo: process.env.SMTP_FROM_EMAIL, // replies land back in the monitored inbox
-    to: options.to,
-    subject: options.subject,
+    replyTo: process.env.SMTP_FROM_EMAIL,
+    to: targetEmail,
+    subject: finalSubject,
     html: options.html,
     text: options.text,
   })

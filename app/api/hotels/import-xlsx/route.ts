@@ -47,44 +47,73 @@ export async function POST(request: NextRequest) {
   const insertErrors: Array<{ row: number; error: string }> = [...errors]
   const insertedBookings: Array<{ id: string; rowIdx: number }> = []
 
+  // Pre-fetch existing booking_refs to prevent employee/booking duplicate rows
+  const refs = rows.map(r => r.booking_ref)
+  const { data: existingBookings } = await db
+    .from('hotel_bookings')
+    .select('id, booking_ref')
+    .in('booking_ref', refs)
+
+  const existingRefMap = new Map((existingBookings || []).map((b: { id: string; booking_ref: string }) => [b.booking_ref.toUpperCase(), b.id]))
+
   for (let idx = 0; idx < rows.length; idx++) {
     const r = rows[idx]
-    const { data: inserted, error: insertErr } = await db
-      .from('hotel_bookings')
-      .insert({
-        import_batch_id: batch.id,
-        created_by: session.userId,
-        hotel_name: r.hotel_name,
-        booking_ref: r.booking_ref,
-        check_in_date: r.check_in_date,
-        traveler_name: r.traveler_name,
-        hotel_email: null,
-        hotel_phone: null,
-        check_out_date: null,
-        traveler_email: r.agent_email ?? null,
-        traveler_phone: r.agent_phone ?? null,
-        // Never pre-confirm from Excel — hotel must reply to the email/WhatsApp.
-        // Rows with Send Notification=YES start as awaiting_reply (email sent).
-        // Cancelled rows stay cancelled. Everything else is pending.
-        confirmation_status: r.confirmation_status === 'cancelled'
-          ? 'cancelled'
-          : r.send_notification
-            ? 'awaiting_reply'
-            : 'pending',
-        confirmed_at: null,
-        confirmed_via: null,
-        request_email_sent: false,
-        request_whatsapp_sent: false,
-        traveler_notified: false,
-      })
-      .select('id')
-      .single()
+    const existingId = existingRefMap.get(r.booking_ref.toUpperCase())
 
-    if (insertErr) {
-      insertErrors.push({ row: idx + 2, error: insertErr.message })
+    const bookingPayload = {
+      import_batch_id: batch.id,
+      hotel_name: r.hotel_name,
+      booking_ref: r.booking_ref,
+      check_in_date: r.check_in_date,
+      traveler_name: r.traveler_name,
+      traveler_email: r.agent_email ?? null,
+      traveler_phone: r.agent_phone ?? null,
+      confirmation_status: r.confirmation_status === 'cancelled'
+        ? 'cancelled'
+        : r.send_notification
+          ? 'awaiting_reply'
+          : 'pending',
+      updated_at: new Date().toISOString(),
+    }
+
+    if (existingId) {
+      // Update existing record (no duplicate row)
+      const { error: updateErr } = await db
+        .from('hotel_bookings')
+        .update(bookingPayload)
+        .eq('id', existingId)
+
+      if (updateErr) {
+        insertErrors.push({ row: idx + 2, error: updateErr.message })
+      } else {
+        successRows++
+        insertedBookings.push({ id: existingId as string, rowIdx: idx })
+      }
     } else {
-      successRows++
-      if (inserted) insertedBookings.push({ id: inserted.id, rowIdx: idx })
+      // Insert new record
+      const { data: inserted, error: insertErr } = await db
+        .from('hotel_bookings')
+        .insert({
+          ...bookingPayload,
+          created_by: session.userId,
+          hotel_email: null,
+          hotel_phone: null,
+          check_out_date: null,
+          confirmed_at: null,
+          confirmed_via: null,
+          request_email_sent: false,
+          request_whatsapp_sent: false,
+          traveler_notified: false,
+        })
+        .select('id')
+        .single()
+
+      if (insertErr) {
+        insertErrors.push({ row: idx + 2, error: insertErr.message })
+      } else {
+        successRows++
+        if (inserted?.id) insertedBookings.push({ id: inserted.id, rowIdx: idx })
+      }
     }
   }
 
@@ -103,8 +132,6 @@ export async function POST(request: NextRequest) {
   let notifFailed = 0
 
   if (insertedBookings.length > 0) {
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-
     for (const { id: bookingId, rowIdx } of insertedBookings) {
       const row = rows[rowIdx]
       if (!row?.send_notification) continue

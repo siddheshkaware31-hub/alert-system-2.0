@@ -1,1 +1,8 @@
-{}
+{
+  "crons": [
+    {
+      "path": "/api/cron/traveler-alerts",
+      "schedule": "*/30 * * * *"
+    }
+  ]
+}

@@ -2,26 +2,49 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { HotelBooking, NotificationLog } from '@/types'
-import { Check, Minus } from 'lucide-react'
+import { Check, Minus, ArrowLeft, Sparkles, Plane, Building2, Upload } from 'lucide-react'
+
+export const dynamic = 'force-dynamic'
 
 export default async function HotelDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const db = createServiceClient()
 
-  const [{ data: booking }, { data: logs }, { data: messages }] = await Promise.all([
+  const [
+    { data: booking, error: bookingErr },
+    { data: logs },
+    { data: messages }
+  ] = await Promise.all([
     db.from('hotel_bookings').select('*').eq('id', id).single(),
     db.from('notification_logs').select('*').eq('entity_id', id).order('sent_at', { ascending: false }),
     db.from('hotel_whatsapp_messages').select('*').eq('hotel_booking_id', id).order('received_at', { ascending: false }),
   ])
+
+  if (bookingErr) console.error('Hotel fetch error:', bookingErr)
 
   if (!booking) notFound()
   const b = booking as HotelBooking
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
   return (
-    <div className="max-w-3xl">
-      <div className="mb-6">
-        <Link href="/hotels" className="text-teal-600 hover:underline text-sm">&larr; Back to hotels</Link>
+    <div className="bg-white rounded-3xl p-8 card-shadow border border-slate-100 max-w-6xl mx-auto">
+      {/* Top Operations Navigation */}
+      <div className="flex border-b border-slate-200 gap-8 mb-6 pb-3 font-semibold text-sm text-slate-500 overflow-x-auto">
+        <Link href="/dashboard" className="flex items-center gap-2 pb-3 border-b-2 border-transparent hover:text-slate-800 shrink-0">
+          <Sparkles size={18} /> Command Center
+        </Link>
+        <Link href="/flights" className="flex items-center gap-2 pb-3 border-b-2 border-transparent hover:text-slate-800 shrink-0">
+          <Plane size={18} /> Live Flights
+        </Link>
+        <Link href="/flights/import" className="flex items-center gap-2 pb-3 border-b-2 border-transparent hover:text-slate-800 shrink-0">
+          <Upload size={18} /> Import Flights
+        </Link>
+        <Link href="/hotels" className="flex items-center gap-2 pb-3 border-b-2 border-blue-600 text-blue-600 font-bold shrink-0">
+          <Building2 size={18} /> Reservations
+        </Link>
+        <Link href="/hotels/import" className="flex items-center gap-2 pb-3 border-b-2 border-transparent hover:text-slate-800 shrink-0">
+          <Upload size={18} /> Import Hotels
+        </Link>
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">

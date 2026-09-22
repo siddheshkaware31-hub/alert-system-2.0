@@ -1,3 +1,4 @@
+import * as XLSX from 'xlsx'
 import { parse } from 'csv-parse/sync'
 
 export interface HotelRow {
@@ -21,47 +22,79 @@ export interface ParseResult {
 
 const REQUIRED = ['hotel_name', 'booking_ref', 'check_in_date', 'check_out_date', 'traveler_name', 'traveler_email']
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
+function formatDateVal(val: unknown): string {
+  if (!val) return ''
+  if (val instanceof Date) {
+    return val.toISOString().split('T')[0]
+  }
+  if (typeof val === 'number') {
+    const d = XLSX.SSF.parse_date_code(val)
+    if (d) return `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`
+  }
+  const s = String(val).trim()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+  const parts = s.split('/')
+  if (parts.length === 3) {
+    const [d, m, y] = parts
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`
+  }
+  return s
+}
 
 export function parseHotelCsv(buffer: Buffer): ParseResult {
-  const records = parse(buffer, { columns: true, skip_empty_lines: true, trim: true }) as Record<string, string>[]
   const rows: HotelRow[] = []
   const errors: Array<{ row: number; error: string }> = []
+  let records: Record<string, any>[] = []
+
+  try {
+    const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true })
+    const sheetName = wb.SheetNames[0]
+    const sheet = wb.Sheets[sheetName]
+    records = XLSX.utils.sheet_to_json(sheet, { defval: '' })
+  } catch {
+    try {
+      records = parse(buffer, { columns: true, skip_empty_lines: true, trim: true })
+    } catch {
+      return { rows: [], errors: [{ row: 1, error: 'Could not parse CSV or Excel file' }] }
+    }
+  }
 
   for (let i = 0; i < records.length; i++) {
-    const rec: Record<string, string> = records[i]
+    const recRaw = records[i]
     const rowNum = i + 2
-    const missing = REQUIRED.filter(f => !rec[f]?.trim())
 
+    const rec: Record<string, string> = {}
+    Object.keys(recRaw).forEach(k => {
+      rec[k.toLowerCase().trim()] = String(recRaw[k] || '').trim()
+    })
+
+    const missing = REQUIRED.filter(f => !rec[f])
     if (missing.length) {
       errors.push({ row: rowNum, error: `Missing required fields: ${missing.join(', ')}` })
       continue
     }
+
     if (!EMAIL_RE.test(rec.traveler_email)) {
       errors.push({ row: rowNum, error: `Invalid traveler email: ${rec.traveler_email}` })
       continue
     }
-    if (rec.hotel_email && !EMAIL_RE.test(rec.hotel_email)) {
-      errors.push({ row: rowNum, error: `Invalid hotel email: ${rec.hotel_email}` })
-      continue
-    }
-    if (!DATE_RE.test(rec.check_in_date) || !DATE_RE.test(rec.check_out_date)) {
-      errors.push({ row: rowNum, error: `Invalid date format (expected YYYY-MM-DD)` })
-      continue
-    }
+
+    const checkIn = formatDateVal(recRaw.check_in_date || rec.check_in_date)
+    const checkOut = formatDateVal(recRaw.check_out_date || rec.check_out_date)
 
     rows.push({
-      hotel_name: rec.hotel_name.trim(),
-      hotel_email: rec.hotel_email?.trim().toLowerCase() || undefined,
-      hotel_phone: rec.hotel_phone?.trim() || undefined,
-      booking_ref: rec.booking_ref.trim(),
-      check_in_date: rec.check_in_date.trim(),
-      check_out_date: rec.check_out_date.trim(),
-      room_type: rec.room_type?.trim() || undefined,
+      hotel_name: rec.hotel_name,
+      hotel_email: rec.hotel_email?.toLowerCase() || undefined,
+      hotel_phone: rec.hotel_phone || undefined,
+      booking_ref: rec.booking_ref,
+      check_in_date: checkIn,
+      check_out_date: checkOut,
+      room_type: rec.room_type || undefined,
       num_rooms: Number(rec.num_rooms) || 1,
-      traveler_name: rec.traveler_name.trim(),
-      traveler_email: rec.traveler_email.trim().toLowerCase(),
-      traveler_phone: rec.traveler_phone?.trim() || undefined,
+      traveler_name: rec.traveler_name,
+      traveler_email: rec.traveler_email.toLowerCase(),
+      traveler_phone: rec.traveler_phone || undefined,
     })
   }
 

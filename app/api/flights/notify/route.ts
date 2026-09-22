@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth/session'
 import { createServiceClient } from '@/lib/supabase/server'
 import { sendEmail } from '@/lib/email/mailer'
-import { sendWhatsAppTemplate } from '@/lib/whatsapp/doubletick'
+import { sendWhatsAppTemplate, sendWhatsAppText } from '@/lib/whatsapp/doubletick'
 import { flightConfirmationEmail } from '@/lib/email/templates/flightConfirmation'
 import { FlightBooking } from '@/types'
 
@@ -67,18 +67,26 @@ export async function POST(request: NextRequest) {
     // Send WhatsApp confirmation
     if (booking.traveler_phone) {
       try {
-        const wa = await sendWhatsAppTemplate({
-          to: booking.traveler_phone,
-          templateName: process.env.DOUBLETICK_TEMPLATE_FLIGHT_CONFIRM!,
-          variables: [
-            booking.traveler_name,
-            booking.pnr,
-            booking.flight_number,
-            booking.origin,
-            booking.destination,
-            booking.departure_date,
-          ],
-        })
+        const templateName = process.env.DOUBLETICK_TEMPLATE_FLIGHT_CONFIRM
+        let wa: { messageId?: string; error?: string } = {}
+        if (templateName) {
+          wa = await sendWhatsAppTemplate({
+            to: booking.traveler_phone,
+            templateName,
+            variables: [
+              booking.traveler_name,
+              booking.pnr,
+              booking.flight_number,
+              booking.origin,
+              booking.destination,
+              booking.departure_date,
+            ],
+          })
+        }
+        if (!templateName || wa.error) {
+          const textMsg = `✈️ *VeloTrav Flight Confirmation*\n\nHi ${booking.traveler_name},\nYour booking for flight *${booking.flight_number}* (${booking.origin} ➔ ${booking.destination}) on ${booking.departure_date} is confirmed!\n\n*PNR:* ${booking.pnr}\n\nHave a safe journey!`
+          wa = await sendWhatsAppText(booking.traveler_phone, textMsg)
+        }
         await db.from('notification_logs').insert({
           entity_type: 'flight',
           entity_id: booking.id,
