@@ -1,4 +1,5 @@
 import { assertNotLiveContact } from '@/lib/guards/liveContacts'
+import { sendSeenWhatsAppText, sendSeenWhatsAppTemplate } from './seen'
 
 const BASE_URL = process.env.DOUBLETICK_API_URL || 'https://public.doubletick.io'
 const API_KEY = process.env.DOUBLETICK_API_KEY!
@@ -37,8 +38,13 @@ async function post(path: string, body: unknown): Promise<{ messageId?: string; 
 
 export async function sendWhatsAppTemplate(opts: SendTemplateOptions) {
   assertNotLiveContact(opts.to, 'whatsapp')
+  
+  if (process.env.SEEN_WHATSAPP_API_KEY) {
+    return sendSeenWhatsAppTemplate(opts)
+  }
+
   if (!API_KEY) {
-    console.log(`[DoubleTick Mock] Template '${opts.templateName}' to ${opts.to}`)
+    console.log(`[WhatsApp Mock] Template '${opts.templateName}' to ${opts.to}`)
     return { messageId: `mock-wa-${Date.now()}` }
   }
 
@@ -61,8 +67,13 @@ export async function sendWhatsAppTemplate(opts: SendTemplateOptions) {
 
 export async function sendWhatsAppText(to: string, text: string) {
   assertNotLiveContact(to, 'whatsapp')
+
+  if (process.env.SEEN_WHATSAPP_API_KEY) {
+    return sendSeenWhatsAppText(to, text)
+  }
+
   if (!API_KEY) {
-    console.log(`[DoubleTick Mock] Text to ${to}: ${text}`)
+    console.log(`[WhatsApp Mock] Text to ${to}: ${text}`)
     return { messageId: `mock-wa-${Date.now()}` }
   }
   return post('/whatsapp/message/text', {
