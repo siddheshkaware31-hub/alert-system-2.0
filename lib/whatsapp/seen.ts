@@ -1,6 +1,6 @@
 import { assertNotLiveContact } from '@/lib/guards/liveContacts'
 
-const BASE_URL = process.env.SEEN_WHATSAPP_API_URL || process.env.DOUBLETICK_API_URL || 'https://wa.vsartech.com'
+const BASE_URL = (process.env.SEEN_WHATSAPP_API_URL || process.env.DOUBLETICK_API_URL || 'https://wa.vsartech.com').replace(/\/+$/, '')
 const API_KEY = process.env.SEEN_WHATSAPP_API_KEY || process.env.DOUBLETICK_API_KEY
 
 interface SendWhatsAppOptions {
@@ -21,30 +21,56 @@ export async function sendSeenWhatsAppText(to: string, text: string): Promise<{ 
     return { messageId: `mock-seen-wa-${Date.now()}` }
   }
 
-  try {
-    const formattedPhone = to.replace(/[^0.9]/g, '')
-    const res = await fetch(`${BASE_URL}/api/v1/messages/send`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${API_KEY}`,
-        'x-api-key': API_KEY,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        receiver: formattedPhone,
-        message: text,
-        type: 'text',
-      }),
-    })
+  // Clean phone number (digits only, e.g. 919876543210)
+  const formattedPhone = to.replace(/[^0-9]/g, '')
 
-    const data = await res.json()
-    if (!res.ok) {
-      return { error: data?.message || data?.error || `HTTP ${res.status}` }
-    }
-    return { messageId: data?.message_id || data?.id || data?.data?.id || `seen-${Date.now()}` }
-  } catch (err: unknown) {
-    return { error: err instanceof Error ? err.message : 'Unknown Seen API error' }
+  const payload = {
+    receiver: formattedPhone,
+    number: formattedPhone,
+    phone: formattedPhone,
+    message: text,
+    msg: text,
+    type: 'text',
+    api_key: API_KEY,
   }
+
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${API_KEY}`,
+    'x-api-key': API_KEY,
+    'Content-Type': 'application/json',
+  }
+
+  // Try standard endpoints for Seen / Wasender gateways
+  const endpoints = [
+    `${BASE_URL}/api/send-message`,
+    `${BASE_URL}/api/v1/messages/send`,
+    `${BASE_URL}/api/create-message`,
+  ]
+
+  let lastError = ''
+
+  for (const url of endpoints) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      })
+
+      const data = await res.json()
+      if (res.ok && (data.status === true || data.success === true || data.id || data.message_id || data.status === 'success' || data.messages)) {
+        return { messageId: data?.message_id || data?.id || data?.data?.id || `seen-${Date.now()}` }
+      }
+      
+      if (data?.message || data?.error) {
+        lastError = data.message || data.error
+      }
+    } catch (err: unknown) {
+      lastError = err instanceof Error ? err.message : 'Fetch failed'
+    }
+  }
+
+  return { error: lastError || 'Failed to send WhatsApp message via Seen API' }
 }
 
 /**
@@ -58,8 +84,9 @@ export async function sendSeenWhatsAppTemplate(opts: SendWhatsAppOptions): Promi
     return { messageId: `mock-seen-wa-${Date.now()}` }
   }
 
+  const formattedPhone = opts.to.replace(/[^0-9]/g, '')
+
   try {
-    const formattedPhone = opts.to.replace(/[^0-9]/g, '')
     const res = await fetch(`${BASE_URL}/api/v1/messages/template`, {
       method: 'POST',
       headers: {
@@ -69,8 +96,10 @@ export async function sendSeenWhatsAppTemplate(opts: SendWhatsAppOptions): Promi
       },
       body: JSON.stringify({
         receiver: formattedPhone,
+        number: formattedPhone,
         template_name: opts.templateName,
         variables: opts.variables || [],
+        api_key: API_KEY,
       }),
     })
 
