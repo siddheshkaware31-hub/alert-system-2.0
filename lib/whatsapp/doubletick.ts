@@ -50,48 +50,12 @@ function isSeenProvider(): boolean {
 
 export async function sendWhatsAppTemplate(opts: SendTemplateOptions) {
   assertNotLiveContact(opts.to, 'whatsapp')
-  
-  if (isSeenProvider()) {
-    return sendSeenWhatsAppTemplate(opts)
-  }
-
-  if (!API_KEY) {
-    console.log(`[WhatsApp Mock] Template '${opts.templateName}' to ${opts.to}`)
-    return { messageId: `mock-wa-${Date.now()}` }
-  }
-
-  const components: TemplateComponent[] = [
-    {
-      type: 'body',
-      parameters: opts.variables.map(v => ({ type: 'text', text: v })),
-    },
-  ]
-
-  return post('/whatsapp/message/template', {
-    to: opts.to,
-    template: {
-      name: opts.templateName,
-      language: { code: opts.languageCode || 'en' },
-      components,
-    },
-  })
+  return sendSeenWhatsAppTemplate(opts)
 }
 
 export async function sendWhatsAppText(to: string, text: string) {
   assertNotLiveContact(to, 'whatsapp')
-
-  if (isSeenProvider()) {
-    return sendSeenWhatsAppText(to, text)
-  }
-
-  if (!API_KEY) {
-    console.log(`[WhatsApp Mock] Text to ${to}: ${text}`)
-    return { messageId: `mock-wa-${Date.now()}` }
-  }
-  return post('/whatsapp/message/text', {
-    to,
-    content: { text },
-  })
+  return sendSeenWhatsAppText(to, text)
 }
 
 export function verifyWebhookSignature(payload: string, signature: string): boolean {
