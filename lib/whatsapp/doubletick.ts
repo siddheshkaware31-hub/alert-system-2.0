@@ -26,9 +26,15 @@ async function post(path: string, body: unknown): Promise<{ messageId?: string; 
       },
       body: JSON.stringify(body),
     })
-    const data = await res.json()
+    const text = await res.text()
+    let data: any
+    try {
+      data = JSON.parse(text)
+    } catch {
+      return { error: `HTTP ${res.status}: Invalid response format` }
+    }
     if (!res.ok) {
-      return { error: data?.message || `HTTP ${res.status}` }
+      return { error: data?.message || data?.error || `HTTP ${res.status}` }
     }
     return { messageId: data?.messages?.[0]?.id || data?.id }
   } catch (err: unknown) {

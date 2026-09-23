@@ -10,6 +10,16 @@ interface SendWhatsAppOptions {
   variables?: string[]
 }
 
+async function safeParseJson(res: Response): Promise<{ data: any; isJson: boolean }> {
+  const text = await res.text()
+  try {
+    const data = JSON.parse(text)
+    return { data, isJson: true }
+  } catch {
+    return { data: text, isJson: false }
+  }
+}
+
 /**
  * Sends a WhatsApp text or template message via Seen WhatsApp API platform (wa.vsartech.com)
  */
@@ -40,7 +50,7 @@ export async function sendSeenWhatsAppText(to: string, text: string): Promise<{ 
     'Content-Type': 'application/json',
   }
 
-  // Try standard endpoints for Seen / Wasender gateways
+  // Common endpoints for Seen / Wasender gateways
   const endpoints = [
     `${BASE_URL}/api/send-message`,
     `${BASE_URL}/api/v1/messages/send`,
@@ -57,13 +67,16 @@ export async function sendSeenWhatsAppText(to: string, text: string): Promise<{ 
         body: JSON.stringify(payload),
       })
 
-      const data = await res.json()
-      if (res.ok && (data.status === true || data.success === true || data.id || data.message_id || data.status === 'success' || data.messages)) {
+      const { data, isJson } = await safeParseJson(res)
+
+      if (res.ok && isJson && (data.status === true || data.success === true || data.id || data.message_id || data.status === 'success' || data.messages)) {
         return { messageId: data?.message_id || data?.id || data?.data?.id || `seen-${Date.now()}` }
       }
-      
-      if (data?.message || data?.error) {
-        lastError = data.message || data.error
+
+      if (isJson) {
+        lastError = data?.message || data?.error || `HTTP ${res.status}`
+      } else {
+        lastError = `HTTP ${res.status}: API Endpoint '${url}' returned non-JSON response.`
       }
     } catch (err: unknown) {
       lastError = err instanceof Error ? err.message : 'Fetch failed'
@@ -103,9 +116,9 @@ export async function sendSeenWhatsAppTemplate(opts: SendWhatsAppOptions): Promi
       }),
     })
 
-    const data = await res.json()
-    if (!res.ok) {
-      return { error: data?.message || data?.error || `HTTP ${res.status}` }
+    const { data, isJson } = await safeParseJson(res)
+    if (!res.ok || !isJson) {
+      return { error: isJson ? (data?.message || data?.error) : `HTTP ${res.status}` }
     }
     return { messageId: data?.message_id || data?.id || `seen-${Date.now()}` }
   } catch (err: unknown) {
