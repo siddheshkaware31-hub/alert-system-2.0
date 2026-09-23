@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/cron/traveler-alerts",
-      "schedule": "0 5 * * *"
+      "schedule": "*/5 * * * *"
     }
   ]
 }
