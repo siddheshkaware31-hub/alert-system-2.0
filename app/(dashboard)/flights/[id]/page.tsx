@@ -2,6 +2,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { FlightBooking, NotificationLog } from '@/types'
+import SendNotificationButton from '@/components/SendNotificationButton'
 import { Check, Minus, ArrowLeft, Sparkles, Plane, Building2, Upload } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
@@ -50,7 +51,10 @@ export default async function FlightDetailPage({ params }: { params: Promise<{ i
             <h1 className="text-2xl font-bold text-gray-900">{b.pnr}</h1>
             <p className="text-gray-500">{b.flight_number} · {b.origin} → {b.destination}</p>
           </div>
-          <StatusBadge status={b.status} delay={b.delay_minutes} />
+          <div className="flex items-center gap-3">
+            <SendNotificationButton bookingId={b.id} type="flight" />
+            <StatusBadge status={b.status} delay={b.delay_minutes} />
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-6">

@@ -2,6 +2,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { HotelBooking, NotificationLog } from '@/types'
+import SendNotificationButton from '@/components/SendNotificationButton'
 import { Check, Minus, ArrowLeft, Sparkles, Plane, Building2, Upload } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
@@ -53,7 +54,10 @@ export default async function HotelDetailPage({ params }: { params: Promise<{ id
             <h1 className="text-2xl font-bold text-gray-900">{b.hotel_name}</h1>
             <p className="text-gray-500">Booking Ref: {b.booking_ref}</p>
           </div>
-          <ConfirmationBadge status={b.confirmation_status} via={b.confirmed_via} />
+          <div className="flex items-center gap-3">
+            <SendNotificationButton bookingId={b.id} type="hotel" />
+            <ConfirmationBadge status={b.confirmation_status} via={b.confirmed_via} />
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-6">
