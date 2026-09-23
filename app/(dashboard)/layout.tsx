@@ -38,9 +38,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
             </div>
             <div className="flex items-center gap-3 pl-4 border-l border-slate-800">
               <span className="text-slate-300 font-medium">{session.email}</span>
-              <Link href="/api/auth/signout" className="bg-slate-800/80 hover:bg-rose-600 text-slate-300 hover:text-white px-3.5 py-1.5 rounded-full border border-slate-700/60 hover:border-rose-500 transition-all font-semibold shadow-sm">
+              <a href="/api/auth/signout" className="bg-slate-800/80 hover:bg-rose-600 text-slate-300 hover:text-white px-3.5 py-1.5 rounded-full border border-slate-700/60 hover:border-rose-500 transition-all font-semibold shadow-sm">
                 Logout
-              </Link>
+              </a>
             </div>
           </div>
 
