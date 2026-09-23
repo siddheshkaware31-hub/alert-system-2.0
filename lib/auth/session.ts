@@ -3,7 +3,9 @@ import { cookies } from 'next/headers'
 import { NextRequest } from 'next/server'
 
 const COOKIE_NAME = 'auth_session'
-const secret = () => new TextEncoder().encode(process.env.JWT_SECRET!)
+const JWT_SECRET_FALLBACK = 'velotrav-corporate-travel-jwt-secret-key-production-32chars'
+
+const secret = () => new TextEncoder().encode(process.env.JWT_SECRET || JWT_SECRET_FALLBACK)
 
 export interface SessionPayload {
   userId: string
@@ -19,10 +21,12 @@ export async function createSession(payload: SessionPayload): Promise<string> {
 }
 
 export async function verifySession(token: string): Promise<SessionPayload | null> {
+  if (!token) return null
   try {
     const { payload } = await jwtVerify(token, await secret())
     return payload as unknown as SessionPayload
-  } catch {
+  } catch (err) {
+    console.error('JWT Verification failed:', err)
     return null
   }
 }
