@@ -38,8 +38,10 @@ export async function sendSeenWhatsAppText(to: string, text: string): Promise<{ 
     receiver: formattedPhone,
     number: formattedPhone,
     phone: formattedPhone,
+    recipient: formattedPhone,
     message: text,
     msg: text,
+    body: text,
     type: 'text',
     api_key: API_KEY,
   }
@@ -47,13 +49,18 @@ export async function sendSeenWhatsAppText(to: string, text: string): Promise<{ 
   const headers: Record<string, string> = {
     'Authorization': `Bearer ${API_KEY}`,
     'x-api-key': API_KEY,
+    'apikey': API_KEY,
     'Content-Type': 'application/json',
   }
 
-  // Common endpoints for Seen / Wasender gateways
+  // Candidate endpoints across popular Seen / Wasender WhatsApp gateways
   const endpoints = [
+    `${BASE_URL}/api/send`,
     `${BASE_URL}/api/send-message`,
+    `${BASE_URL}/api/messages/send`,
+    `${BASE_URL}/api/v1/send`,
     `${BASE_URL}/api/v1/messages/send`,
+    `${BASE_URL}/api/v1/whatsapp/send`,
     `${BASE_URL}/api/create-message`,
   ]
 
@@ -69,21 +76,19 @@ export async function sendSeenWhatsAppText(to: string, text: string): Promise<{ 
 
       const { data, isJson } = await safeParseJson(res)
 
-      if (res.ok && isJson && (data.status === true || data.success === true || data.id || data.message_id || data.status === 'success' || data.messages)) {
+      if (res.ok && isJson && (data.status === true || data.success === true || data.id || data.message_id || data.status === 'success' || data.messages || data.data?.id)) {
         return { messageId: data?.message_id || data?.id || data?.data?.id || `seen-${Date.now()}` }
       }
 
       if (isJson) {
         lastError = data?.message || data?.error || `HTTP ${res.status}`
-      } else {
-        lastError = `HTTP ${res.status}: API Endpoint '${url}' returned non-JSON response.`
       }
     } catch (err: unknown) {
       lastError = err instanceof Error ? err.message : 'Fetch failed'
     }
   }
 
-  return { error: lastError || 'Failed to send WhatsApp message via Seen API' }
+  return { error: lastError || 'Failed to send WhatsApp message via Seen API. Check API Docs for exact URL endpoint.' }
 }
 
 /**
