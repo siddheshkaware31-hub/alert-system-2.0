@@ -44,13 +44,3 @@ next-env.d.ts
 .mcp.json
 *.xlsx
 *.xls
-
-.env
-.env.local
-.env.*.local
-
-node_modules/
-.next/
-.env
-.env.local
-.env*.local
