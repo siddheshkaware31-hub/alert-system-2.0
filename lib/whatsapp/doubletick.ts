@@ -42,10 +42,16 @@ async function post(path: string, body: unknown): Promise<{ messageId?: string; 
   }
 }
 
+function isSeenProvider(): boolean {
+  const key = process.env.SEEN_WHATSAPP_API_KEY || process.env.DOUBLETICK_API_KEY || ''
+  const url = process.env.SEEN_WHATSAPP_API_URL || process.env.DOUBLETICK_API_URL || ''
+  return key.startsWith('wa_live_') || key.startsWith('wa_') || url.includes('vsartech') || !!process.env.SEEN_WHATSAPP_API_KEY
+}
+
 export async function sendWhatsAppTemplate(opts: SendTemplateOptions) {
   assertNotLiveContact(opts.to, 'whatsapp')
   
-  if (process.env.SEEN_WHATSAPP_API_KEY) {
+  if (isSeenProvider()) {
     return sendSeenWhatsAppTemplate(opts)
   }
 
@@ -74,7 +80,7 @@ export async function sendWhatsAppTemplate(opts: SendTemplateOptions) {
 export async function sendWhatsAppText(to: string, text: string) {
   assertNotLiveContact(to, 'whatsapp')
 
-  if (process.env.SEEN_WHATSAPP_API_KEY) {
+  if (isSeenProvider()) {
     return sendSeenWhatsAppText(to, text)
   }
 
