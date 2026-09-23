@@ -5,7 +5,10 @@ import { NextRequest } from 'next/server'
 const COOKIE_NAME = 'auth_session'
 const JWT_SECRET_FALLBACK = 'velotrav-corporate-travel-jwt-secret-key-production-32chars'
 
-const secret = () => new TextEncoder().encode(process.env.JWT_SECRET || JWT_SECRET_FALLBACK)
+const secret = () => {
+  const secretKey = process.env.JWT_SECRET?.trim() || JWT_SECRET_FALLBACK
+  return new TextEncoder().encode(secretKey)
+}
 
 export interface SessionPayload {
   userId: string
