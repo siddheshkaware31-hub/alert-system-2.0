@@ -18,7 +18,7 @@ export default function SendNotificationButton({ bookingId, type, label }: SendN
   async function handleSend() {
     setLoading(true)
     const endpoint = type === 'flight' ? '/api/flights/notify' : '/api/hotels/notify'
-    const body = type === 'flight' ? { bookingIds: [bookingId] } : { bookingId }
+    const body = { bookingIds: [bookingId] }
 
     try {
       const res = await fetch(endpoint, {
