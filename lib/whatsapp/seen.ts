@@ -2,7 +2,6 @@ import { SeenClient } from 'seenwa'
 import { assertNotLiveContact } from '@/lib/guards/liveContacts'
 
 const API_KEY = process.env.SEEN_WHATSAPP_API_KEY || process.env.DOUBLETICK_API_KEY
-const PHONE_NUMBER_ID = process.env.SEEN_WHATSAPP_PHONE_NUMBER_ID || process.env.SEEN_PHONE_NUMBER_ID || 'default'
 
 interface SendTemplateOptions {
   to: string
@@ -34,6 +33,20 @@ function getCandidateClientOptions(): Array<{ apiKey: string; baseUrl?: string }
   return list
 }
 
+function getCandidatePhoneIds(): string[] {
+  return Array.from(
+    new Set(
+      [
+        process.env.SEEN_WHATSAPP_PHONE_NUMBER_ID,
+        process.env.SEEN_PHONE_NUMBER_ID,
+        process.env.SEEN_WHATSAPP_SESSION_KEY,
+        'automatefd alert system',
+        'default',
+      ].filter(Boolean)
+    )
+  ) as string[]
+}
+
 /**
  * Sends a WhatsApp text message using the official Seen SDK (`seenwa`)
  */
@@ -47,24 +60,27 @@ export async function sendSeenWhatsAppText(to: string, text: string): Promise<{ 
 
   const formattedPhone = to.replace(/[^0-9]/g, '')
   const optionsList = getCandidateClientOptions()
+  const phoneIds = getCandidatePhoneIds()
   let lastError = ''
 
-  for (const opts of optionsList) {
-    try {
-      const client = new SeenClient(opts)
+  for (const clientOpts of optionsList) {
+    for (const phoneId of phoneIds) {
+      try {
+        const client = new SeenClient(clientOpts)
 
-      const result = (await client.messages.sendText({
-        to: formattedPhone,
-        phone_number_id: PHONE_NUMBER_ID,
-        message: text,
-      })) as any
+        const result = (await client.messages.sendText({
+          to: formattedPhone,
+          phone_number_id: phoneId,
+          message: text,
+        })) as any
 
-      return { messageId: result?.id || result?.message_id || `seen-${Date.now()}` }
-    } catch (err: unknown) {
-      lastError = err instanceof Error ? err.message : 'Seen API error'
-      // If error is not a 404 URL route issue, stop retrying
-      if (!lastError.includes('404')) {
-        break
+        return { messageId: result?.id || result?.message_id || `seen-${Date.now()}` }
+      } catch (err: unknown) {
+        lastError = err instanceof Error ? err.message : 'Seen API error'
+        // If error is 404 route matching issue or "Not found" phone ID, try next candidate
+        if (!lastError.toLowerCase().includes('404') && !lastError.toLowerCase().includes('not found')) {
+          break
+        }
       }
     }
   }
@@ -95,25 +111,28 @@ export async function sendSeenWhatsAppTemplate(opts: SendTemplateOptions): Promi
     : undefined
 
   const optionsList = getCandidateClientOptions()
+  const phoneIds = getCandidatePhoneIds()
   let lastError = ''
 
   for (const clientOpts of optionsList) {
-    try {
-      const client = new SeenClient(clientOpts)
+    for (const phoneId of phoneIds) {
+      try {
+        const client = new SeenClient(clientOpts)
 
-      const result = (await client.messages.sendTemplate({
-        to: formattedPhone,
-        phone_number_id: PHONE_NUMBER_ID,
-        template_name: opts.templateName,
-        language_code: opts.languageCode || 'en',
-        components,
-      })) as any
+        const result = (await client.messages.sendTemplate({
+          to: formattedPhone,
+          phone_number_id: phoneId,
+          template_name: opts.templateName,
+          language_code: opts.languageCode || 'en',
+          components,
+        })) as any
 
-      return { messageId: result?.id || result?.message_id || `seen-${Date.now()}` }
-    } catch (err: unknown) {
-      lastError = err instanceof Error ? err.message : 'Seen API Template error'
-      if (!lastError.includes('404')) {
-        break
+        return { messageId: result?.id || result?.message_id || `seen-${Date.now()}` }
+      } catch (err: unknown) {
+        lastError = err instanceof Error ? err.message : 'Seen API Template error'
+        if (!lastError.toLowerCase().includes('404') && !lastError.toLowerCase().includes('not found')) {
+          break
+        }
       }
     }
   }
