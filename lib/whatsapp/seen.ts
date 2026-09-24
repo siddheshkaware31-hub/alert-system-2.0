@@ -11,20 +11,27 @@ interface SendTemplateOptions {
   languageCode?: string
 }
 
-function getCandidateBaseUrls(): string[] {
-  return Array.from(
-    new Set(
-      [
-        process.env.SEEN_WHATSAPP_API_URL,
-        'https://wa.vsartech.com/api/v1',
-        'https://wa.vsartech.com/api',
-        'https://wa.vsartech.com',
-        'https://api.seen.vsartech.com/api/v1',
-      ]
-        .filter(Boolean)
-        .map(u => (u as string).replace(/\/+$/, ''))
-    )
-  )
+function getCandidateClientOptions(): Array<{ apiKey: string; baseUrl?: string }> {
+  const list: Array<{ apiKey: string; baseUrl?: string }> = [
+    { apiKey: API_KEY! }, // Official default seenwa SDK cloud API (https://api.seen.com/api/v1)
+  ]
+
+  if (process.env.SEEN_WHATSAPP_API_URL) {
+    list.push({ apiKey: API_KEY!, baseUrl: process.env.SEEN_WHATSAPP_API_URL.replace(/\/+$/, '') })
+  }
+
+  const customUrls = [
+    'https://wa.vsartech.com/api/v1',
+    'https://wa.vsartech.com/api',
+    'https://wa.vsartech.com',
+    'https://api.seen.vsartech.com/api/v1',
+  ]
+
+  for (const url of customUrls) {
+    list.push({ apiKey: API_KEY!, baseUrl: url })
+  }
+
+  return list
 }
 
 /**
@@ -39,15 +46,12 @@ export async function sendSeenWhatsAppText(to: string, text: string): Promise<{ 
   }
 
   const formattedPhone = to.replace(/[^0-9]/g, '')
-  const baseUrls = getCandidateBaseUrls()
+  const optionsList = getCandidateClientOptions()
   let lastError = ''
 
-  for (const baseUrl of baseUrls) {
+  for (const opts of optionsList) {
     try {
-      const client = new SeenClient({
-        apiKey: API_KEY,
-        baseUrl,
-      })
+      const client = new SeenClient(opts)
 
       const result = (await client.messages.sendText({
         to: formattedPhone,
@@ -90,15 +94,12 @@ export async function sendSeenWhatsAppTemplate(opts: SendTemplateOptions): Promi
       ]
     : undefined
 
-  const baseUrls = getCandidateBaseUrls()
+  const optionsList = getCandidateClientOptions()
   let lastError = ''
 
-  for (const baseUrl of baseUrls) {
+  for (const clientOpts of optionsList) {
     try {
-      const client = new SeenClient({
-        apiKey: API_KEY,
-        baseUrl,
-      })
+      const client = new SeenClient(clientOpts)
 
       const result = (await client.messages.sendTemplate({
         to: formattedPhone,
