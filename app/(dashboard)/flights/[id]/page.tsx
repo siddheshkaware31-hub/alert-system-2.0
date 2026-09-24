@@ -91,7 +91,7 @@ export default async function FlightDetailPage({ params }: { params: Promise<{ i
             {(logs as NotificationLog[]).map(log => (
               <div key={log.id} className="flex items-center gap-3 text-sm">
                 <div className={`w-2 h-2 rounded-full flex-shrink-0 ${log.status === 'sent' ? 'bg-green-500' : 'bg-red-500'}`} />
-                <span className="text-gray-500 text-xs w-32 flex-shrink-0">{new Date(log.sent_at).toLocaleString('en-IN')}</span>
+                <span className="text-gray-500 text-xs w-32 flex-shrink-0">{new Date(log.sent_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</span>
                 <span className="font-medium text-gray-900 capitalize">{log.notification_type.replace(/_/g, ' ')}</span>
                 <span className="text-gray-400">via {log.channel}</span>
                 {log.status === 'failed' && <span className="text-red-600 text-xs ml-auto">{log.error_message}</span>}

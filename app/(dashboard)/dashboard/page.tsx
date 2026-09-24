@@ -171,7 +171,7 @@ export default async function DashboardPage() {
                 </span>
                 <div>
                   <p className="font-bold text-slate-800 capitalize">{n.notification_type.replace('_', ' ')} ({n.entity_type})</p>
-                  <p className="text-[10px] text-slate-400 font-mono">{new Date(n.sent_at).toLocaleString()}</p>
+                  <p className="text-[10px] text-slate-400 font-mono">{new Date(n.sent_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</p>
                 </div>
               </div>
               <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${n.status === 'sent' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>

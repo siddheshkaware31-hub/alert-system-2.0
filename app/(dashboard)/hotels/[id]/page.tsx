@@ -68,7 +68,7 @@ export default async function HotelDetailPage({ params }: { params: Promise<{ id
           {b.room_type && <Detail label="Room Type" value={`${b.room_type} × ${b.num_rooms}`} />}
           {b.hotel_email && <Detail label="Hotel Email" value={b.hotel_email} />}
           {b.hotel_phone && <Detail label="Hotel Phone" value={b.hotel_phone} />}
-          {b.confirmed_at && <Detail label="Confirmed At" value={new Date(b.confirmed_at).toLocaleString('en-IN')} />}
+          {b.confirmed_at && <Detail label="Confirmed At" value={new Date(b.confirmed_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} />}
           {b.confirmed_via && <Detail label="Confirmed Via" value={b.confirmed_via} />}
         </div>
 
@@ -104,7 +104,7 @@ export default async function HotelDetailPage({ params }: { params: Promise<{ id
                   <span className={`text-xs font-medium ${m.direction === 'inbound' ? 'text-green-700' : 'text-blue-700'}`}>
                     {m.direction === 'inbound' ? '← Hotel' : '→ Sent'}
                   </span>
-                  <span className="text-gray-400 text-xs">{new Date(m.received_at as string).toLocaleString('en-IN')}</span>
+                  <span className="text-gray-400 text-xs">{new Date(m.received_at as string).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</span>
                 </div>
                 <p className="text-gray-700">{m.message_body as string}</p>
               </div>
@@ -120,7 +120,7 @@ export default async function HotelDetailPage({ params }: { params: Promise<{ id
             {(logs as NotificationLog[]).map(log => (
               <div key={log.id} className="flex items-center gap-3 text-sm">
                 <div className={`w-2 h-2 rounded-full flex-shrink-0 ${log.status === 'sent' ? 'bg-green-500' : 'bg-red-500'}`} />
-                <span className="text-gray-500 text-xs w-32 flex-shrink-0">{new Date(log.sent_at).toLocaleString('en-IN')}</span>
+                <span className="text-gray-500 text-xs w-32 flex-shrink-0">{new Date(log.sent_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</span>
                 <span className="font-medium text-gray-900 capitalize">{log.notification_type.replace(/_/g, ' ')}</span>
                 <span className="text-gray-400">via {log.channel}</span>
                 {log.status === 'failed' && <span className="text-red-600 text-xs ml-auto">{log.error_message}</span>}
