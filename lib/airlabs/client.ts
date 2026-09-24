@@ -1,7 +1,9 @@
 import { FlightStatus, FlightStatusInfo } from '@/types'
 
 const BASE_URL = 'https://airlabs.co/api/v9'
-const API_KEY = process.env.AIRLABS_API_KEY || ''
+const rawKey = (process.env.AIRLABS_API_KEY || '').trim()
+// AirLabs keys are standard UUIDs (hex digits and hyphens). Strip any accidental trailing characters or whitespace
+const API_KEY = rawKey.replace(/[^0-9a-fA-F\-]/g, '')
 
 function mapStatus(raw: string, depDelayed: number): FlightStatus {
   switch (raw?.toLowerCase()) {
