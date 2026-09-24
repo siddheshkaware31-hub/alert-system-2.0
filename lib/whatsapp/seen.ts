@@ -3,7 +3,7 @@ import { assertNotLiveContact } from '@/lib/guards/liveContacts'
 
 const API_KEY = process.env.SEEN_WHATSAPP_API_KEY || process.env.DOUBLETICK_API_KEY
 const PHONE_NUMBER_ID = process.env.SEEN_WHATSAPP_PHONE_NUMBER_ID || process.env.SEEN_PHONE_NUMBER_ID || 'default'
-const BASE_URL = process.env.SEEN_WHATSAPP_API_URL
+const BASE_URL = (process.env.SEEN_WHATSAPP_API_URL || 'https://wa.vsartech.com/api/v1').replace(/\/+$/, '')
 
 interface SendTemplateOptions {
   to: string
@@ -26,7 +26,7 @@ export async function sendSeenWhatsAppText(to: string, text: string): Promise<{ 
   try {
     const client = new SeenClient({
       apiKey: API_KEY,
-      ...(BASE_URL ? { baseUrl: BASE_URL } : {}),
+      baseUrl: BASE_URL,
     })
 
     const formattedPhone = to.replace(/[^0-9]/g, '')
@@ -59,7 +59,7 @@ export async function sendSeenWhatsAppTemplate(opts: SendTemplateOptions): Promi
   try {
     const client = new SeenClient({
       apiKey: API_KEY,
-      ...(BASE_URL ? { baseUrl: BASE_URL } : {}),
+      baseUrl: BASE_URL,
     })
 
     const formattedPhone = opts.to.replace(/[^0-9]/g, '')
