@@ -49,8 +49,8 @@ export async function sendEmail(options: {
 
   const t = getTransporter()
   const info = await t.sendMail({
-    from: `"${process.env.SMTP_FROM_NAME}" <${process.env.SMTP_FROM_EMAIL}>`,
-    replyTo: process.env.SMTP_FROM_EMAIL,
+    from: `"${process.env.SMTP_FROM_NAME || 'VeloTrav Alerts'}" <${process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER}>`,
+    replyTo: process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER,
     to: targetEmail,
     subject: finalSubject,
     html: options.html,

@@ -9,7 +9,7 @@ export function hasSmtp(): boolean {
 }
 
 export function hasWhatsApp(): boolean {
-  return Boolean(process.env.DOUBLETICK_API_KEY)
+  return Boolean(process.env.SEEN_WHATSAPP_API_KEY || process.env.DOUBLETICK_API_KEY)
 }
 
 export function hasFlightApi(): boolean {

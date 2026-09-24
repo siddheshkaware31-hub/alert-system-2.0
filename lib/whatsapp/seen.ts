@@ -1,10 +1,10 @@
 import { SeenClient } from 'seenwa'
 import { assertNotLiveContact } from '@/lib/guards/liveContacts'
 
-const API_KEY = process.env.SEEN_WHATSAPP_API_KEY || process.env.DOUBLETICK_API_KEY
+const API_KEY = (process.env.SEEN_WHATSAPP_API_KEY || process.env.DOUBLETICK_API_KEY || '').trim()
 // Correct base URL and phone number ID discovered from live Seen API (wa.vsartech.com)
-const SEEN_BASE_URL = (process.env.SEEN_WHATSAPP_API_URL || 'https://wa.vsartech.com/api/v1').replace(/\/+$/, '')
-const SEEN_PHONE_NUMBER_ID = process.env.SEEN_WHATSAPP_PHONE_NUMBER_ID || '1343836215481945'
+const SEEN_BASE_URL = (process.env.SEEN_WHATSAPP_API_URL || 'https://wa.vsartech.com/api/v1').trim().replace(/\/+$/, '')
+const SEEN_PHONE_NUMBER_ID = (process.env.SEEN_WHATSAPP_PHONE_NUMBER_ID || '1343836215481945').trim()
 
 interface SendTemplateOptions {
   to: string

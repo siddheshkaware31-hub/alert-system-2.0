@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx'
 import { parse } from 'csv-parse/sync'
+import { cleanFlightRecords, AICleaningStats } from '@/lib/ai/dataCleaner'
 
 export interface FlightRow {
   pnr: string
@@ -19,6 +20,7 @@ export interface FlightRow {
 export interface ParseResult {
   rows: FlightRow[]
   errors: Array<{ row: number; error: string }>
+  aiStats?: AICleaningStats
 }
 
 const REQUIRED = ['pnr', 'flight_number', 'origin', 'destination', 'departure_date', 'traveler_name', 'traveler_email', 'traveler_phone']
@@ -47,23 +49,26 @@ function formatDateVal(val: unknown): string {
 export function parseFlightCsv(buffer: Buffer): ParseResult {
   const rows: FlightRow[] = []
   const errors: Array<{ row: number; error: string }> = []
-  let records: Record<string, any>[] = []
+  let rawRecords: Record<string, any>[] = []
 
   try {
     const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true })
     const sheetName = wb.SheetNames[0]
     const sheet = wb.Sheets[sheetName]
-    records = XLSX.utils.sheet_to_json(sheet, { defval: '' })
+    rawRecords = XLSX.utils.sheet_to_json(sheet, { defval: '' })
   } catch {
     try {
-      records = parse(buffer, { columns: true, skip_empty_lines: true, trim: true })
+      rawRecords = parse(buffer, { columns: true, skip_empty_lines: true, trim: true })
     } catch {
       return { rows: [], errors: [{ row: 1, error: 'Could not parse CSV or Excel file' }] }
     }
   }
 
-  for (let i = 0; i < records.length; i++) {
-    const recRaw = records[i]
+  // ✨ Run Smart AI Data Cleaner
+  const { rows: cleanedRecords, stats: aiStats } = cleanFlightRecords(rawRecords)
+
+  for (let i = 0; i < cleanedRecords.length; i++) {
+    const recRaw = cleanedRecords[i]
     const rowNum = i + 2
 
     // Normalize keys to lowercase trim
@@ -102,5 +107,5 @@ export function parseFlightCsv(buffer: Buffer): ParseResult {
     })
   }
 
-  return { rows, errors }
+  return { rows, errors, aiStats }
 }

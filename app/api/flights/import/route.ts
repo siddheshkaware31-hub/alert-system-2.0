@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
   if (!file) return NextResponse.json({ error: 'No file uploaded' }, { status: 400 })
 
   const buffer = Buffer.from(await file.arrayBuffer())
-  const { rows, errors } = parseFlightCsv(buffer)
+  const { rows, errors, aiStats } = parseFlightCsv(buffer)
 
   const db = createServiceClient()
 
@@ -102,5 +102,6 @@ export async function POST(request: NextRequest) {
     successRows,
     failedRows: insertErrors.length,
     errors: insertErrors,
+    aiStats,
   })
 }

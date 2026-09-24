@@ -10,6 +10,13 @@ interface ImportResult {
   successRows: number
   failedRows: number
   errors: Array<{ row: number; error: string }>
+  aiStats?: {
+    headersMapped: number
+    phonesFormatted: number
+    namesCleaned: number
+    datesNormalized: number
+    aiCorrections: string[]
+  }
 }
 
 export default function FlightImportPage() {
@@ -110,9 +117,16 @@ export default function FlightImportPage() {
         </Link>
       </div>
 
-      <div className="mb-6">
-        <h2 className="text-xl font-extrabold text-slate-900">Import Flight Bookings</h2>
-        <p className="text-slate-500 text-xs mt-1">Upload a CSV file with flight booking data to import travelers and dispatch flight boarding alerts.</p>
+      <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-extrabold text-slate-900 flex items-center gap-2">
+            Import Flight Bookings
+            <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-sm">
+              <Sparkles size={12} /> AI Auto-Clean Enabled
+            </span>
+          </h2>
+          <p className="text-slate-500 text-xs mt-1">Upload a CSV/Excel file. AI automatically normalizes columns, cleans passenger names, and formats phone numbers for WhatsApp.</p>
+        </div>
       </div>
 
       {/* CSV Format Guide */}
@@ -191,6 +205,46 @@ export default function FlightImportPage() {
               <p className="text-slate-500 text-xs font-medium">Failed Rows</p>
             </div>
           </div>
+
+          {/* ✨ AI Cleaning Report */}
+          {result.aiStats && (
+            <div className="mb-6 bg-gradient-to-r from-purple-50 via-indigo-50 to-blue-50 border border-purple-200/80 rounded-2xl p-5 shadow-sm">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="p-1.5 rounded-lg bg-purple-600 text-white shadow-sm">
+                  <Sparkles size={16} />
+                </div>
+                <h4 className="font-extrabold text-purple-950 text-xs uppercase tracking-wider">AI Data Sanitization Report</h4>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center mb-3">
+                <div className="bg-white/80 border border-purple-100 rounded-xl p-2.5">
+                  <p className="text-lg font-extrabold text-purple-700">{result.aiStats.headersMapped}</p>
+                  <p className="text-[10px] text-slate-500 font-semibold uppercase">Columns Mapped</p>
+                </div>
+                <div className="bg-white/80 border border-purple-100 rounded-xl p-2.5">
+                  <p className="text-lg font-extrabold text-purple-700">{result.aiStats.phonesFormatted}</p>
+                  <p className="text-[10px] text-slate-500 font-semibold uppercase">Phones Formatted (+91)</p>
+                </div>
+                <div className="bg-white/80 border border-purple-100 rounded-xl p-2.5">
+                  <p className="text-lg font-extrabold text-purple-700">{result.aiStats.namesCleaned}</p>
+                  <p className="text-[10px] text-slate-500 font-semibold uppercase">Names Cleaned</p>
+                </div>
+                <div className="bg-white/80 border border-purple-100 rounded-xl p-2.5">
+                  <p className="text-lg font-extrabold text-purple-700">{result.aiStats.datesNormalized}</p>
+                  <p className="text-[10px] text-slate-500 font-semibold uppercase">Dates ISO-Formatted</p>
+                </div>
+              </div>
+              {result.aiStats.aiCorrections && result.aiStats.aiCorrections.length > 0 && (
+                <div className="space-y-1 bg-white/60 p-3 rounded-xl border border-purple-100 text-[11px] font-mono text-purple-900">
+                  <div className="font-bold text-[10px] text-purple-600 uppercase mb-1">Recent AI Auto-Corrections:</div>
+                  {result.aiStats.aiCorrections.map((corr, i) => (
+                    <div key={i} className="flex items-center gap-1.5">
+                      <span className="text-purple-500">•</span> {corr}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {result.successRows > 0 && (
             <button
