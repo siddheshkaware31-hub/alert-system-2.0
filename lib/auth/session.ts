@@ -3,10 +3,15 @@ import { cookies } from 'next/headers'
 import { NextRequest } from 'next/server'
 
 const COOKIE_NAME = 'auth_session'
-const JWT_SECRET_FALLBACK = 'velotrav-corporate-travel-jwt-secret-key-production-32chars'
 
 const secret = () => {
-  const secretKey = process.env.JWT_SECRET?.trim() || JWT_SECRET_FALLBACK
+  const secretKey = process.env.JWT_SECRET?.trim()
+  if (!secretKey) {
+    throw new Error(
+      'JWT_SECRET is not set in environment variables. ' +
+      'Add JWT_SECRET to your .env.local file to fix session issues.'
+    )
+  }
   return new TextEncoder().encode(secretKey)
 }
 

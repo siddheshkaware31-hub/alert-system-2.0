@@ -1,0 +1,188 @@
+import type { Page, Browser } from 'playwright'
+import path from 'path'
+import fs from 'fs'
+import os from 'os'
+import type { CheckinResult } from './airIndia'
+
+const AKASA_CHECKIN_URL = 'https://www.akasaair.com'
+
+function extractLastName(fullName: string): string {
+  const parts = fullName.trim().split(/\s+/)
+  return parts[parts.length - 1]
+}
+
+/**
+ * Performs Akasa Air (QP) web check-in via Playwright headless Chromium.
+ * Returns the boarding pass PDF as a Buffer.
+ */
+export async function checkinAkasa(
+  browser: Browser,
+  pnr: string,
+  travelerName: string
+): Promise<CheckinResult> {
+  const lastName = extractLastName(travelerName)
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-qp-'))
+  let page: Page | null = null
+
+  try {
+    const context = await browser.newContext({
+      userAgent:
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+      viewport: { width: 1280, height: 800 },
+      locale: 'en-IN',
+      timezoneId: 'Asia/Kolkata',
+      acceptDownloads: true,
+    })
+
+    page = await context.newPage()
+
+    console.log(`[Akasa] Navigating to check-in page for PNR ${pnr}`)
+    await page.goto(AKASA_CHECKIN_URL, { waitUntil: 'domcontentloaded', timeout: 30000 })
+    await page.waitForTimeout(3000)
+
+    // Click Check-in tab if needed
+    const checkinTabSelectors = [
+      'button:has-text("Check-in")',
+      'a:has-text("Check-in")',
+      '[data-testid="checkin-tab"]',
+      '#checkin-tab',
+    ]
+    for (const sel of checkinTabSelectors) {
+      try {
+        const tab = page.locator(sel).first()
+        if (await tab.isVisible({ timeout: 3000 })) {
+          await tab.click()
+          await page.waitForTimeout(1000)
+          break
+        }
+      } catch { /* ignore */ }
+    }
+
+    // Fill PNR
+    const pnrSelectors = [
+      'input[name="pnr"]',
+      'input[name="bookingReference"]',
+      'input[placeholder*="PNR"]',
+      'input[placeholder*="Booking"]',
+      '#pnr',
+      '#bookingRef',
+    ]
+    let pnrFilled = false
+    for (const sel of pnrSelectors) {
+      try {
+        await page.waitForSelector(sel, { timeout: 5000 })
+        await page.fill(sel, pnr.toUpperCase())
+        pnrFilled = true
+        console.log(`[Akasa] PNR filled using selector: ${sel}`)
+        break
+      } catch { /* try next */ }
+    }
+
+    if (!pnrFilled) {
+      const screenshot = path.join(tmpDir, 'debug-pnr.png')
+      await page.screenshot({ path: screenshot })
+      return { success: false, error: 'Could not locate PNR input field on Akasa Air check-in page', screenshotPath: screenshot }
+    }
+
+    // Fill Last Name
+    const lastNameSelectors = [
+      'input[name="lastName"]',
+      'input[name="last_name"]',
+      'input[placeholder*="Last Name"]',
+      'input[placeholder*="Surname"]',
+      '#lastName',
+    ]
+    let nameFilled = false
+    for (const sel of lastNameSelectors) {
+      try {
+        await page.waitForSelector(sel, { timeout: 5000 })
+        await page.fill(sel, lastName.toUpperCase())
+        nameFilled = true
+        console.log(`[Akasa] Last name "${lastName}" filled using selector: ${sel}`)
+        break
+      } catch { /* try next */ }
+    }
+
+    if (!nameFilled) {
+      const screenshot = path.join(tmpDir, 'debug-lastname.png')
+      await page.screenshot({ path: screenshot })
+      return { success: false, error: 'Could not locate Last Name field on Akasa Air page', screenshotPath: screenshot }
+    }
+
+    // Click submit
+    const submitSelectors = [
+      'button[type="submit"]',
+      'button:has-text("Check-in")',
+      'button:has-text("Search")',
+      'button:has-text("Retrieve")',
+    ]
+    let submitted = false
+    for (const sel of submitSelectors) {
+      try {
+        await page.click(sel, { timeout: 5000 })
+        submitted = true
+        break
+      } catch { /* try next */ }
+    }
+
+    if (!submitted) {
+      const screenshot = path.join(tmpDir, 'debug-submit.png')
+      await page.screenshot({ path: screenshot })
+      return { success: false, error: 'Could not click submit button on Akasa Air page', screenshotPath: screenshot }
+    }
+
+    await page.waitForTimeout(4000)
+
+    // Check for CAPTCHA
+    const captchaPresent = await page.locator('iframe[src*="recaptcha"], .g-recaptcha, [class*="captcha"]').count()
+    if (captchaPresent > 0) {
+      const screenshot = path.join(tmpDir, 'debug-captcha.png')
+      await page.screenshot({ path: screenshot })
+      return { success: false, error: 'CAPTCHA_REQUIRED', screenshotPath: screenshot }
+    }
+
+    // Download PDF or print fallback
+    const downloadSelectors = [
+      'button:has-text("Download Boarding Pass")',
+      'a:has-text("Download Boarding Pass")',
+      'button:has-text("Download")',
+    ]
+    for (const sel of downloadSelectors) {
+      try {
+        const el = page.locator(sel).first()
+        if (!(await el.isVisible({ timeout: 5000 }))) continue
+        const [download] = await Promise.all([
+          page.waitForEvent('download', { timeout: 15000 }),
+          el.click(),
+        ])
+        const pdfPath = path.join(tmpDir, `boarding-pass-${pnr}.pdf`)
+        await download.saveAs(pdfPath)
+        const pdfBuffer = fs.readFileSync(pdfPath)
+        console.log(`[Akasa] ✅ Boarding pass PDF downloaded: ${pdfPath}`)
+        return { success: true, pdfPath, pdfBuffer }
+      } catch { /* try next */ }
+    }
+
+    // Fallback: Print to PDF
+    console.log('[Akasa] Print-to-PDF fallback...')
+    const pdfPath = path.join(tmpDir, `boarding-pass-${pnr}.pdf`)
+    const pdfBytes = await page.pdf({
+      path: pdfPath,
+      format: 'A4',
+      printBackground: true,
+      margin: { top: '10mm', bottom: '10mm', left: '10mm', right: '10mm' },
+    })
+    const pdfBuffer = Buffer.from(pdfBytes)
+    return { success: true, pdfPath, pdfBuffer }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Unknown error'
+    let screenshotPath: string | undefined
+    try {
+      if (page) {
+        screenshotPath = path.join(tmpDir, 'debug-fatal.png')
+        await page.screenshot({ path: screenshotPath })
+      }
+    } catch { /* ignore */ }
+    return { success: false, error: msg, screenshotPath }
+  }
+}

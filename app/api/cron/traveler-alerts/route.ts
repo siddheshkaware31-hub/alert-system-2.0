@@ -3,6 +3,10 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { sendEmail } from '@/lib/email/mailer'
 import { sendWhatsAppText } from '@/lib/whatsapp/doubletick'
 import { FlightBooking, HotelBooking } from '@/types'
+import { boardingPassEmail } from '@/lib/email/templates/boardingPassEmail'
+import { boardingPassPdfEmail } from '@/lib/email/templates/boardingPassPdfEmail'
+import { performAutoCheckin, detectAirline } from '@/lib/automation/checkin'
+import nodemailer from 'nodemailer'
 import {
   preFlightReminderEmail,
   postFlightFeedbackEmail,
@@ -32,6 +36,7 @@ export async function GET(request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
   const results = {
+    boardingPassDispatched: 0,
     preFlightAlerts: 0,
     postFlightFeedback: 0,
     hotelCheckInAlerts: 0,
@@ -74,6 +79,113 @@ export async function GET(request: NextRequest) {
       provider_message_id: providerId || null,
       error_message: errorMessage || null,
     })
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 0. VIRTUAL EMPLOYEE — AUTO WEB CHECK-IN (48h before departure)
+  //    For AI/6E/UK: Playwright visits the airline website, completes web
+  //    check-in, downloads the official PDF, and emails it to the traveller.
+  //    For other airlines: sends VeloTrav digital pass link as fallback.
+  //    Only runs within the 48-hour check-in window per airline guidelines.
+  // ═══════════════════════════════════════════════════════════════════════════
+  try {
+    // Find flights departing within the next 48 hours (but not already departed)
+    const window48h = new Date(now)
+    window48h.setHours(window48h.getHours() + 48)
+    const window48hStr = window48h.toISOString().split('T')[0]
+
+    const { data: upcomingFlights } = await db
+      .from('flight_bookings')
+      .select('*')
+      .gte('departure_date', todayStr)         // not yet departed
+      .lte('departure_date', window48hStr)     // within 48h window
+      .in('status', ['scheduled', 'active', 'delayed'])
+      .neq('last_alert_status', 'boarding_pass_sent') // not already sent
+
+    if (upcomingFlights?.length) {
+      for (const flight of upcomingFlights as FlightBooking[]) {
+        const notifType = 'auto_checkin'
+        if (await alreadySent(flight.id, notifType)) continue
+
+        const airline = detectAirline(flight.airline_code, flight.flight_number)
+
+        if (airline) {
+          // ── REAL AIRLINE WEB CHECK-IN via Playwright ──────────────────────
+          const result = await performAutoCheckin({ pnr: flight.pnr, travelerName: flight.traveler_name, airline })
+
+          if (result.success && result.pdfBuffer) {
+            // Send email with official PDF attached
+            try {
+              const t = nodemailer.createTransport({
+                host: process.env.SMTP_HOST, port: Number(process.env.SMTP_PORT) || 587,
+                secure: process.env.SMTP_SECURE === 'true',
+                auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD },
+              })
+              const { subject, html } = boardingPassPdfEmail(flight)
+              const info = await t.sendMail({
+                from: `"${process.env.SMTP_FROM_NAME || 'VeloTrav Alerts'}" <${process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER}>`,
+                to: flight.traveler_email,
+                subject,
+                html,
+                attachments: [{ filename: `BoardingPass-${flight.pnr}-${flight.flight_number}.pdf`, content: result.pdfBuffer, contentType: 'application/pdf' }],
+              })
+              await logNotification('flight', flight.id, 'email', notifType, flight.traveler_email, undefined, 'sent', undefined, info.messageId)
+              results.boardingPassDispatched++
+            } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : 'Unknown'
+              await logNotification('flight', flight.id, 'email', notifType, flight.traveler_email, undefined, 'failed', msg)
+              results.errors.push(`Auto check-in email ${flight.pnr}: ${msg}`)
+            }
+
+            // WhatsApp — confirm PDF was emailed
+            if (flight.traveler_phone) {
+              const waText =
+                `🎟️ *VeloTrav — Web Check-in Complete!*\n\n` +
+                `Hi *${flight.traveler_name}*,\n` +
+                `Your web check-in for flight *${flight.flight_number}* (${flight.origin} → ${flight.destination}) on *${flight.departure_date}* has been completed automatically.\n\n` +
+                `📧 Your official boarding pass PDF has been sent to: *${flight.traveler_email}*\n` +
+                `${flight.gate ? `🚪 Gate: *${flight.gate}*\n` : ''}` +
+                `${flight.terminal ? `🏢 Terminal: *${flight.terminal}*\n` : ''}` +
+                `🔖 PNR: *${flight.pnr}*\n\n` +
+                `_Please check your email and save the boarding pass. Have a safe flight!_ ✈️`
+              const wa = await sendWhatsAppText(flight.traveler_phone, waText)
+              await logNotification('flight', flight.id, 'whatsapp', notifType, undefined, flight.traveler_phone, wa.error ? 'failed' : 'sent', wa.error, wa.messageId)
+            }
+          } else {
+            // Playwright failed (CAPTCHA or network) — fallback to digital pass
+            results.errors.push(`Auto check-in failed for ${flight.pnr}: ${result.error || 'unknown'}. Sending digital pass fallback.`)
+            const { subject, html } = boardingPassEmail(flight)
+            await sendEmail({ to: flight.traveler_email, subject, html })
+            await logNotification('flight', flight.id, 'email', 'boarding_pass_fallback', flight.traveler_email, undefined, 'sent')
+          }
+        } else {
+          // ── UNSUPPORTED AIRLINE — send VeloTrav digital pass link ─────────
+          const passUrl = `${appUrl}/pass/${flight.pnr}`
+          const { subject, html } = boardingPassEmail(flight)
+          const { messageId } = await sendEmail({ to: flight.traveler_email, subject, html })
+          await logNotification('flight', flight.id, 'email', notifType, flight.traveler_email, undefined, 'sent', undefined, messageId)
+          results.boardingPassDispatched++
+
+          if (flight.traveler_phone) {
+            const gate = flight.gate || '—'; const terminal = flight.terminal || '—'
+            const waText =
+              `🎟️ *VeloTrav — Your Boarding Pass is Ready!*\n\n` +
+              `Hi *${flight.traveler_name}*,\nYour boarding pass for flight *${flight.flight_number}* (${flight.origin} → ${flight.destination}) on *${flight.departure_date}* is ready.\n\n` +
+              `⏰ Departure: ${flight.departure_time || '—'} | 🚪 Gate: *${gate}* | 🏢 Terminal: *${terminal}*\n` +
+              `🔖 PNR: *${flight.pnr}*\n\n📱 Open Boarding Pass:\n${passUrl}\n\n_Have a safe flight!_ ✈️`
+            const wa = await sendWhatsAppText(flight.traveler_phone, waText)
+            await logNotification('flight', flight.id, 'whatsapp', notifType, undefined, flight.traveler_phone, wa.error ? 'failed' : 'sent', wa.error, wa.messageId)
+          }
+        }
+
+        // Mark as dispatched
+        await db.from('flight_bookings')
+          .update({ last_alert_status: 'boarding_pass_sent', last_alert_sent_at: now.toISOString() })
+          .eq('id', flight.id)
+      }
+    }
+  } catch (err: unknown) {
+    results.errors.push(`Auto check-in cron: ${err instanceof Error ? err.message : 'Unknown'}`)
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

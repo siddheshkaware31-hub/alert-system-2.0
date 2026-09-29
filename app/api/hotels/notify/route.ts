@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     let emailOk = false
     let waOk = false
 
-    // Email to hotel
+    // ── Email to hotel ──────────────────────────────────────────────────────
     if (booking.hotel_email) {
       try {
         const { subject, html } = hotelConfirmationRequestEmail(booking, confirmUrl)
@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // WhatsApp to hotel
+    // ── WhatsApp to hotel ───────────────────────────────────────────────────
     if (booking.hotel_phone) {
       try {
         const templateName = process.env.DOUBLETICK_TEMPLATE_HOTEL_REQUEST
@@ -98,6 +98,36 @@ export async function POST(request: NextRequest) {
           error_message: wa.error,
         })
         waOk = !wa.error
+      } catch {}
+    }
+
+    // ── WhatsApp to traveler — booking acknowledgement ──────────────────────
+    // Traveler is notified immediately that their booking has been placed
+    // and confirmation is being awaited from the hotel.
+    if (booking.traveler_phone) {
+      try {
+        const travelerMsg =
+          `🏨 *VeloTrav — Hotel Booking Update*\n\n` +
+          `Hi *${booking.traveler_name}*,\n` +
+          `Your hotel booking has been placed and we are awaiting confirmation from the hotel.\n\n` +
+          `🏩 Hotel: *${booking.hotel_name}*\n` +
+          `📋 Booking Ref: *${booking.booking_ref}*\n` +
+          `📅 Check-in: *${booking.check_in_date}*\n` +
+          `📅 Check-out: *${booking.check_out_date}*\n` +
+          `${booking.room_type ? `🛏️ Room: *${booking.room_type}* × ${booking.num_rooms}\n` : ''}` +
+          `\nWe will notify you as soon as the hotel confirms. For any queries, contact your travel desk. 🙏`
+
+        const wa = await sendWhatsAppText(booking.traveler_phone, travelerMsg)
+        await db.from('notification_logs').insert({
+          entity_type: 'hotel',
+          entity_id: booking.id,
+          channel: 'whatsapp',
+          notification_type: 'hotel_booking_acknowledged',
+          recipient_phone: booking.traveler_phone,
+          status: wa.error ? 'failed' : 'sent',
+          provider_message_id: wa.messageId,
+          error_message: wa.error || null,
+        })
       } catch {}
     }
 

@@ -3,7 +3,10 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { FlightBooking, NotificationLog } from '@/types'
 import SendNotificationButton from '@/components/SendNotificationButton'
-import { Check, Minus, ArrowLeft, Sparkles, Plane, Building2, Upload } from 'lucide-react'
+import SendBoardingPassButton from '@/components/SendBoardingPassButton'
+import AutoCheckinButton from '@/components/AutoCheckinButton'
+import { detectAirline } from '@/lib/automation/checkin'
+import { Check, Minus, Sparkles, Plane, Building2, Upload, Bot } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -51,7 +54,19 @@ export default async function FlightDetailPage({ params }: { params: Promise<{ i
             <h1 className="text-2xl font-bold text-gray-900">{b.pnr}</h1>
             <p className="text-gray-500">{b.flight_number} · {b.origin} → {b.destination}</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <AutoCheckinButton
+              bookingId={b.id}
+              pnr={b.pnr}
+              flightNumber={b.flight_number}
+              airline={detectAirline(b.airline_code, b.flight_number)}
+              alreadyCheckedIn={b.last_alert_status === 'boarding_pass_sent'}
+            />
+            <SendBoardingPassButton
+              bookingId={b.id}
+              pnr={b.pnr}
+              alreadySent={b.last_alert_status === 'boarding_pass_sent'}
+            />
             <SendNotificationButton bookingId={b.id} type="flight" />
             <StatusBadge status={b.status} delay={b.delay_minutes} />
           </div>
@@ -78,9 +93,10 @@ export default async function FlightDetailPage({ params }: { params: Promise<{ i
           <Detail label="Email" value={b.traveler_email} />
           <Detail label="Phone" value={b.traveler_phone} />
         </div>
-        <div className="mt-4 flex gap-4">
+        <div className="mt-4 flex gap-4 flex-wrap">
           <NotifStatus label="Email Confirmation" sent={b.confirmation_email_sent} />
           <NotifStatus label="WhatsApp Confirmation" sent={b.confirmation_whatsapp_sent} />
+          <NotifStatus label="🎟️ Boarding Pass Sent" sent={b.last_alert_status === 'boarding_pass_sent'} />
         </div>
       </div>
 

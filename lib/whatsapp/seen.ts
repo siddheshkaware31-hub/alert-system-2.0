@@ -14,6 +14,21 @@ interface SendTemplateOptions {
 }
 
 /**
+ * Formats phone numbers into E.164 standard required by WhatsApp Cloud API (e.g. 917498807980).
+ * Automatically prepends India country code 91 if a 10-digit number is provided.
+ */
+function formatPhoneNumber(phone: string): string {
+  let cleaned = (phone || '').replace(/[^0-9]/g, '')
+  if (cleaned.startsWith('0')) {
+    cleaned = cleaned.substring(1)
+  }
+  if (cleaned.length === 10) {
+    cleaned = '91' + cleaned
+  }
+  return cleaned
+}
+
+/**
  * Sends a WhatsApp text message using the official Seen SDK (`seenwa`)
  * Phone Number: +91 84213 99912 (vesartech) | phoneNumberId: 1343836215481945
  */
@@ -25,7 +40,7 @@ export async function sendSeenWhatsAppText(to: string, text: string): Promise<{ 
     return { messageId: `mock-seen-wa-${Date.now()}` }
   }
 
-  const formattedPhone = to.replace(/[^0-9]/g, '')
+  const formattedPhone = formatPhoneNumber(to)
 
   try {
     const client = new SeenClient({ apiKey: API_KEY, baseUrl: SEEN_BASE_URL })
@@ -55,7 +70,7 @@ export async function sendSeenWhatsAppTemplate(opts: SendTemplateOptions): Promi
     return { messageId: `mock-seen-wa-${Date.now()}` }
   }
 
-  const formattedPhone = opts.to.replace(/[^0-9]/g, '')
+  const formattedPhone = formatPhoneNumber(opts.to)
   const components = opts.variables?.length
     ? [
         {
