@@ -25,8 +25,12 @@ export default function AutoCheckinButton({ bookingId, pnr, flightNumber, airlin
   )
   const [errorMsg, setErrorMsg] = useState('')
 
-  const supported = airline === 'AI' || airline === '6E' || airline === 'UK' || airline === 'QP'
-  const airlineName = airline === '6E' ? 'IndiGo' : airline === 'QP' ? 'Akasa Air' : 'Air India'
+  const supported = airline === 'AI' || airline === '6E' || airline === 'UK' || airline === 'QP' || airline === 'SG' || airline === 'IX'
+  const airlineName =
+    airline === '6E' ? 'IndiGo' :
+    airline === 'QP' ? 'Akasa Air' :
+    airline === 'SG' ? 'SpiceJet' :
+    airline === 'IX' ? 'Air India Express' : 'Air India'
 
   async function handleAutoCheckin() {
     setStatus('running')

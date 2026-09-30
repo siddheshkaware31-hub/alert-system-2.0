@@ -2,10 +2,12 @@ import { chromium, Browser } from 'playwright'
 import { checkinAirIndia, type CheckinResult } from './airIndia'
 import { checkinIndigo } from './indigo'
 import { checkinAkasa } from './akasa'
+import { checkinSpicejet } from './spicejet'
+import { checkinAirIndiaExpress } from './airIndiaExpress'
 
 export type { CheckinResult }
 
-export type SupportedAirline = 'AI' | '6E' | 'QP'
+export type SupportedAirline = 'AI' | '6E' | 'QP' | 'SG' | 'IX'
 
 /**
  * Detects the airline from the airline_code or flight_number prefix.
@@ -17,6 +19,8 @@ export function detectAirline(airlineCode?: string | null, flightNumber?: string
   if (code.startsWith('AI') || code === 'AI') return 'AI'
   if (code.startsWith('6E') || code === '6E') return '6E'
   if (code.startsWith('QP') || code === 'QP') return 'QP'
+  if (code.startsWith('SG') || code === 'SG') return 'SG'
+  if (code.startsWith('IX') || code === 'IX' || code.startsWith('I5') || code === 'I5') return 'IX'
 
   // Vistara (UK) merged into Air India — use AI flow
   if (code.startsWith('UK') || code === 'UK') return 'AI'
@@ -62,6 +66,10 @@ export async function performAutoCheckin(opts: {
       result = await checkinIndigo(browser, pnr, travelerName)
     } else if (airline === 'QP') {
       result = await checkinAkasa(browser, pnr, travelerName)
+    } else if (airline === 'SG') {
+      result = await checkinSpicejet(browser, pnr, travelerName)
+    } else if (airline === 'IX') {
+      result = await checkinAirIndiaExpress(browser, pnr, travelerName)
     } else {
       result = { success: false, error: `Unsupported airline: ${airline}` }
     }

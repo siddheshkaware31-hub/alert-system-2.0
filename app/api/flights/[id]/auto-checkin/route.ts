@@ -68,7 +68,7 @@ export async function POST(
   const airline = detectAirline(b.airline_code, b.flight_number)
   if (!airline) {
     return NextResponse.json({
-      error: `Auto check-in not supported for airline: ${b.airline_code || b.flight_number}. Only Air India (AI/UK), IndiGo (6E), and Akasa Air (QP) are supported.`,
+      error: `Auto check-in not supported for airline: ${b.airline_code || b.flight_number}. Supported airlines: Air India (AI/UK), IndiGo (6E), Akasa Air (QP), SpiceJet (SG), Air India Express (IX).`,
     }, { status: 422 })
   }
 
