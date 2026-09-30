@@ -2,20 +2,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth/session'
 import { createServiceClient } from '@/lib/supabase/server'
 import { performAutoCheckin, detectAirline } from '@/lib/automation/checkin'
+import { isInternationalFlight, internationalVisaNoticeEmail } from '@/lib/automation/checkin/international'
 import { boardingPassPdfEmail } from '@/lib/email/templates/boardingPassPdfEmail'
 import { sendWhatsAppText } from '@/lib/whatsapp/doubletick'
+import { sendEmail } from '@/lib/email/mailer'
 import nodemailer from 'nodemailer'
 import { FlightBooking } from '@/types'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 120 // Playwright needs up to 2 minutes
 
-/**
- * POST /api/flights/[id]/auto-checkin
- * Triggers fully automated web check-in for a flight booking.
- * Playwright visits the airline website, enters PNR + last name,
- * downloads the boarding pass PDF, and sends it to the traveler.
- */
 export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -62,6 +58,68 @@ export async function POST(
       error: 'Boarding pass has not been issued yet',
       message: `Boarding pass for PNR ${b.pnr} has not been issued yet because departure date (${b.departure_date}) is more than 48 hours away. Web check-in opens 48 hours before departure.`,
     }, { status: 400 })
+  }
+
+  // ── INTERNATIONAL FLIGHT CHECK ───────────────────────────────────────────
+  if (isInternationalFlight(b.origin, b.destination)) {
+    const { subject, html, whatsappText } = internationalVisaNoticeEmail({
+      travelerName: b.traveler_name,
+      pnr: b.pnr,
+      flightNumber: b.flight_number,
+      origin: b.origin,
+      destination: b.destination,
+      departureDate: b.departure_date,
+    })
+
+    let emailStatus = 'skipped'
+    let waStatus = 'skipped'
+
+    try {
+      const { messageId } = await sendEmail({ to: b.traveler_email, subject, html })
+      await db.from('notification_logs').insert({
+        entity_type: 'flight',
+        entity_id: b.id,
+        channel: 'email',
+        notification_type: 'international_visa_notice',
+        recipient_email: b.traveler_email,
+        status: 'sent',
+        provider_message_id: messageId,
+      })
+      emailStatus = 'sent'
+    } catch (err: unknown) {
+      emailStatus = 'failed'
+    }
+
+    if (b.traveler_phone) {
+      try {
+        const wa = await sendWhatsAppText(b.traveler_phone, whatsappText)
+        await db.from('notification_logs').insert({
+          entity_type: 'flight',
+          entity_id: b.id,
+          channel: 'whatsapp',
+          notification_type: 'international_visa_notice',
+          recipient_phone: b.traveler_phone,
+          status: wa.error ? 'failed' : 'sent',
+          provider_message_id: wa.messageId,
+          error_message: wa.error || null,
+        })
+        waStatus = wa.error ? 'failed' : 'sent'
+      } catch {
+        waStatus = 'failed'
+      }
+    }
+
+    await db.from('flight_bookings')
+      .update({ last_alert_status: 'boarding_pass_sent', last_alert_sent_at: new Date().toISOString() })
+      .eq('id', b.id)
+
+    return NextResponse.json({
+      success: true,
+      isInternational: true,
+      pnr: b.pnr,
+      sent: { email: emailStatus, whatsapp: waStatus },
+      message: 'International travel detected. Passport & Visa verification notice sent to traveler.',
+    })
   }
 
   // Detect airline
