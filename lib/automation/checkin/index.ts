@@ -1,32 +1,9 @@
-import { chromium, Browser } from 'playwright'
-import { checkinAirIndia, type CheckinResult } from './airIndia'
-import { checkinIndigo } from './indigo'
-import { checkinAkasa } from './akasa'
-import { checkinSpicejet } from './spicejet'
-import { checkinAirIndiaExpress } from './airIndiaExpress'
+import type { CheckinResult } from './airIndia'
+import { detectAirline, type SupportedAirline } from './detect'
 
 export type { CheckinResult }
-
-export type SupportedAirline = 'AI' | '6E' | 'QP' | 'SG' | 'IX'
-
-/**
- * Detects the airline from the airline_code or flight_number prefix.
- * Returns null if automation is not supported for this airline.
- */
-export function detectAirline(airlineCode?: string | null, flightNumber?: string): SupportedAirline | null {
-  const code = (airlineCode || flightNumber || '').toUpperCase().trim()
-
-  if (code.startsWith('AI') || code === 'AI') return 'AI'
-  if (code.startsWith('6E') || code === '6E') return '6E'
-  if (code.startsWith('QP') || code === 'QP') return 'QP'
-  if (code.startsWith('SG') || code === 'SG') return 'SG'
-  if (code.startsWith('IX') || code === 'IX' || code.startsWith('I5') || code === 'I5') return 'IX'
-
-  // Vistara (UK) merged into Air India — use AI flow
-  if (code.startsWith('UK') || code === 'UK') return 'AI'
-
-  return null
-}
+export { detectAirline }
+export type { SupportedAirline }
 
 /**
  * Main entry point: performs automated web check-in for the given booking.
@@ -44,15 +21,17 @@ export async function performAutoCheckin(opts: {
 
   console.log(`[AutoCheckin] Starting for PNR=${pnr} airline=${airline} traveler="${travelerName}"`)
 
-  let browser: Browser | null = null
+  let browser = null
   try {
+    const { chromium } = await import('playwright')
+
     browser = await chromium.launch({
       headless: true,
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
-        '--disable-blink-features=AutomationControlled', // hide bot fingerprint
+        '--disable-blink-features=AutomationControlled',
         '--disable-infobars',
         '--disable-extensions',
       ],
@@ -61,14 +40,19 @@ export async function performAutoCheckin(opts: {
     let result: CheckinResult
 
     if (airline === 'AI') {
+      const { checkinAirIndia } = await import('./airIndia')
       result = await checkinAirIndia(browser, pnr, travelerName)
     } else if (airline === '6E') {
+      const { checkinIndigo } = await import('./indigo')
       result = await checkinIndigo(browser, pnr, travelerName)
     } else if (airline === 'QP') {
+      const { checkinAkasa } = await import('./akasa')
       result = await checkinAkasa(browser, pnr, travelerName)
     } else if (airline === 'SG') {
+      const { checkinSpicejet } = await import('./spicejet')
       result = await checkinSpicejet(browser, pnr, travelerName)
     } else if (airline === 'IX') {
+      const { checkinAirIndiaExpress } = await import('./airIndiaExpress')
       result = await checkinAirIndiaExpress(browser, pnr, travelerName)
     } else {
       result = { success: false, error: `Unsupported airline: ${airline}` }
@@ -89,3 +73,4 @@ export async function performAutoCheckin(opts: {
     if (browser) await browser.close()
   }
 }
+

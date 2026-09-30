@@ -5,7 +5,7 @@ import { FlightBooking, NotificationLog } from '@/types'
 import SendNotificationButton from '@/components/SendNotificationButton'
 import SendBoardingPassButton from '@/components/SendBoardingPassButton'
 import AutoCheckinButton from '@/components/AutoCheckinButton'
-import { detectAirline } from '@/lib/automation/checkin'
+import { detectAirline } from '@/lib/automation/checkin/detect'
 import { Check, Minus, Sparkles, Plane, Building2, Upload, Bot } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
